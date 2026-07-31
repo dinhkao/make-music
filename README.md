@@ -201,3 +201,45 @@ Every streetlight is a flame
 python3 supernova_build.py
 ffmpeg -i static-supernova.wav -codec:a libmp3lame -b:a 192k static-supernova.mp3
 ```
+
+---
+
+# 🏠 THE GREAT INDOORS (bài thứ 4 — 2:44)
+
+**File:** `THE-GREAT-INDOORS.mp3` · `THE-GREAT-INDOORS-v2.wav`
+**Engine:** gi_engine.py (tempo map 118→119 BPM, Karplus-Strong, Wurli FM, vocal formant, horns) + kit.py (modal synthesis trống: Bessel membrane modes, snare wire buzz, hi-hat 2-cymbal) + perform.py (nhân hóa: systematic offsets + Gauss jitter, accent patterns, micro/bleed model 5 mic ảo).
+
+## Cấu trúc (312 beat, 4/4)
+```
+0:00  INTRO — Wurli lounge + cross-stick đếm
+0:08  VERSE 1 — jangle arp + bass root + vocal (breath)
+0:24  REFRAIN 1 — strum + bass walk + vocal + harmony thấp 1 quãng 8
+0:41  VERSE 2 — + crunch guitar + organ
+0:57  REFRAIN 2 — bass 8ths + gang vocal
+1:13  BRIDGE — giữ 1 nốt G#4/E4, hòa âm trượt nửa cung
+1:29  RAMP — vòng quãng 5 (F#7-B7-E7-A7) + gang
+1:37  CUT — gần như im lặng + stutter fill kiểu Villa
+1:41  OUTRO 1 — disco + hi-hat mở bị bóp (choke)
+1:58  OUTRO 2 — + horn section + gang vocal 6 giọng
+2:14  OUTRO 3 — MAX + guitar solo (bend) + horn octave
+2:30  TAG — Wurli cô đơn, dừng trên Amaj7 (V — không giải quyết)
+```
+
+## Trống (drums_new.npy — script riêng)
+- INTRO: cross-stick ×4 + snare fill
+- VERSE: cross-stick, kick syncopated, hat 8th, foot-hat 2&4
+- REFRAIN: snare center + tambourine Motown + open-hat choke
+- VERSE 2: ride + bell + ghost notes
+- REFRAIN 2: backbeat ghép snare+clap+tamb (0/+4/+9ms) + hat 16th
+- BRIDGE: chỉ tom floor (tune 168→92) — "cả bàn cùng đánh accent"
+- RAMP: mật độ 8→8→16→32 + snare roll 32
+- CUT: cross-stick + foot-hat + stutter 3 beat
+- OUTRO: disco kick elec + hi-hat mở bị bóp mọi phách lẻ + crash + ride bell
+- TAG: chỉ 1 cross-stick cuối
+
+## Chạy lại
+```bash
+python3 great-indoors-drums.py   # -> drums_new.npy
+python3 great-indoors.py         # -> THE-GREAT-INDOORS-v2.wav
+ffmpeg -i THE-GREAT-INDOORS-v2.wav -codec:a libmp3lame -b:a 192k THE-GREAT-INDOORS.mp3
+```
