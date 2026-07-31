@@ -75,3 +75,64 @@ Cần: Python 3 + numpy, macOS `say` (giọng Whisper), ffmpeg.
 - **Nhạc cụ**: Rhodes FM-additive, bass sine+tanh, strings detuned saw + lowpass, lead saw+LP+vibrato, solo saw+drive, choir formant (750/1150/2600Hz)
 - **Trống**: kick sweep 120→45Hz, snare body+noise, hat noise HP 7kHz
 - **Hiệu ứng**: reverb convolution (noise IR), delay dotted-8th, crackle vinyl, master tanh soft-clip
+
+---
+
+# 🍯 HONEY STATIC (bài thứ 2 — 2:25)
+
+**File:** `honey-static.mp3` · `honey-static.wav`
+**Ý tưởng:** nhạc pop catchy + quirky — áp dụng mọi thứ học được từ research Magdalena Bay + Nick Villa.
+
+## Bài này học được gì từ ai?
+
+| Chi tiết | Nguồn |
+|---|---|
+| Hợp âm mượn **F#7** trong verse (C → F#7 → Cmaj7 → G7) | Killing Time (tab UG) |
+| **Kick syncopated** + **snare ghost notes** đặt gần kick | Nick Villa tutorial Death & Romance |
+| **Hi-hat 16th xuyên suốt** ("lock vào grid") | Nick Villa tutorial |
+| **Ride bell** pattern trong chorus | Nick Villa tutorial |
+| Fill trống vào **"two and"** (beat 2.5) trước chorus | Nick Villa tutorial |
+| **Double-kick fill** ở chorus2 | Nick Villa (Iron Cobra) |
+| Bridge đổi nhịp **6/8** lắc lư | Killing Time (bass tab 6/8) |
+| Hợp âm 7ths/9ths + melody stepwise diatonic | Imaginal Disk analysis |
+| Whisper pitch-down + reverb | (giọng Mac Whisper) |
+| Vinyl crackle, TV beep intro, **glitch stutter** outro | quirk riêng của bài |
+
+## Cấu trúc (112 BPM, C major)
+
+```
+0:00  Intro lounge (TV beep + crackle)
+0:17  Verse — melody vào, kick syncopated + ghost notes
+0:34  Pre — strings nổi, snare fill "two and"
+0:43  Chorus — HOOK "Honey static" ×2, ride bell, octave shimmer
+1:00  Verse 2
+1:17  Pre + fill
+1:26  Chorus 2 — harmony quãng 3 + double-kick fill
+1:43  Bridge 6/8 — gam tăng dần C→A, whisper "Tick-tock..."
+1:56  Chorus 3 (tag) — choir + hook cuối
+2:04  Outro — choir + arp + whisper "Goodnight, television" + glitch
+```
+
+## Lời (gợi ý hát lên)
+
+```
+[Verse]
+Pouring honey down the telephone line
+You pick up and the signal's fine
+Little sparks across the kitchen tile
+Sweetest static, drive me wild
+
+[Chorus]
+Honey static, running through my automatic heart
+Honey static, tear my circuits all apart
+
+[Bridge]
+Tick-tock, the wires hum your name
+Static in the honey, buzzing in my brain
+```
+
+## Chạy lại
+```bash
+python3 honey_build.py
+ffmpeg -i honey-static.wav -codec:a libmp3lame -b:a 192k honey-static.mp3
+```

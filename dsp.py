@@ -57,9 +57,9 @@ def delay(sig, sr, t=0.375, fb=0.42, taps=6):
     return out[: len(sig)]
 
 
-def master(stereo, sr, gain=0.85):
-    """Gentle soft clip at fixed gain (keeps dynamics)."""
-    return np.tanh(stereo * 0.9) * gain
+def master(stereo, sr, gain=0.85, drive=1.25):
+    """Soft clip with glue drive (pop master feel)."""
+    return np.tanh(stereo * drive) * gain
 
 
 def write_wav(path, stereo, sr):
