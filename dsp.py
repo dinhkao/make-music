@@ -57,7 +57,7 @@ def delay(sig, sr, t=0.375, fb=0.42, taps=6):
     return out[: len(sig)]
 
 
-def master(stereo, sr, gain=0.85, drive=1.25):
+def master(stereo, sr, gain=0.88, drive=1.05):
     """Soft clip with glue drive (pop master feel)."""
     return np.tanh(stereo * drive) * gain
 

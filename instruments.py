@@ -95,3 +95,36 @@ def choir(freqs, dur, amp, sr):
     env = np.minimum(1, t / 0.5) * np.minimum(1, (dur - t) / 0.8)
     vib = 1 + 0.006 * np.sin(2 * np.pi * 4.2 * t + 0.5)
     return (sig * env * vib * amp).astype(np.float32)
+
+
+def ks(freq, dur, amp, sr, damp=0.5):
+    """Karplus-Strong pluck - acoustic guitar-ish string."""
+    n = int(dur * sr)
+    L = max(2, int(sr / freq))
+    rng = np.random.default_rng(0)
+    buf = rng.uniform(-1, 1, L)
+    k = max(1, int(damp * L / 8))
+    w = np.ones(k) / k
+    buf = np.convolve(buf, w, 'same')
+    buf *= 1.0 / (np.max(np.abs(buf)) + 1e-9)
+    cycles = int(np.ceil(n / L)) + 1
+    out = np.tile(buf, cycles)[:n]
+    env = np.exp(-np.arange(n) / (0.45 * sr))  # ring ~0.45s
+    env *= np.minimum(1, np.arange(n) / (0.004 * sr))
+    return (out * env * amp).astype(np.float32)
+
+
+def clap(amp, sr):
+    """Handclap: double burst noise."""
+    n = int(0.18 * sr)
+    t = np.arange(n) / sr
+    rng = np.random.default_rng(8)
+    noise = rng.standard_normal(n)
+    sig = filt(noise, sr, "bp", 1400)
+    burst = np.zeros(n)
+    b1, b2 = int(0.005 * sr), int(0.03 * sr)
+    burst[:int(0.02 * sr)] = np.exp(-np.arange(int(0.02 * sr)) / (0.006 * sr))
+    burst[b2:b2 + int(0.05 * sr)] = np.exp(-np.arange(int(0.05 * sr)) / (0.01 * sr))
+    out = sig * burst * 1.2
+    out *= np.minimum(1, t / 0.001)
+    return (out * amp).astype(np.float32)

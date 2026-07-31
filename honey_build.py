@@ -7,10 +7,10 @@ import numpy as np
 
 import honey_notes as N
 from instruments import note_freq, ep, bass, strings, lead, choir
-from drums import kick, snare, hat, shaker, tamb, crackle
+from drums import kick, snare, hat, shaker, tamb, crackle, tom, crash
 from dsp import filt, make_ir, reverb, delay, master, write_wav
 from honey_drums import (drum_events, KICK, SNARE, HAT, OPEN, SHAKER,
-                         TAMB, BELL, CRASH)
+                         TAMB, BELL, CRASH, TOM)
 
 SR = N.SR
 BEAT = N.BEAT
@@ -80,10 +80,10 @@ def render_bars(section, buf, send, offset):
         root = N.BASS[ch]
         # EP chords
         for m in voicing:
-            place(buf, ep(note_freq(m), blen * 1.1, 0.045, SR), t0, 0.35)
+            place(buf, ep(note_freq(m), blen * 1.1, 0.06, SR), t0, 0.35)
         # Bass
         for b, off, d in BASS_PAT[style]:
-            place(buf, bass(note_freq(root + off), d * BEAT, 0.16, SR),
+            place(buf, bass(note_freq(root + off), d * BEAT, 0.24, SR),
                   t0 + (b + jit()) * BEAT, 0.5)
         # Drums (Nick Villa style)
         for ev in drum_events(style, i + 1, beats):
@@ -102,6 +102,11 @@ def render_bars(section, buf, send, offset):
                 sig = tamb(amp, SR)
             elif inst == BELL:
                 sig = bell(880, amp, SR)
+            elif inst == TOM:
+                pitch = ev[3] if len(ev) > 3 else 1.0
+                sig = tom(amp, SR, pitch)
+            elif inst == CRASH:
+                sig = crash(amp, SR)
             else:
                 sig = hat(amp, SR, True)
             place(buf, sig, t0 + b * BEAT, 0.5)
@@ -116,7 +121,9 @@ def render_bars(section, buf, send, offset):
     # Melody
     if name in ("verse", "pre", "chorus", "chorus2", "bridge", "chorus3"):
         mkey = "chorus" if name.startswith("chorus") else name
-        lead_amp = 0.38 if name == "pre" else 0.55
+        lead_amp = {"verse": 0.42, "pre": 0.38, "chorus": 0.55,
+                    "chorus2": 0.55, "chorus3": 0.55, "bridge": 0.50}.get(
+                        name, 0.5)
         for lb, b, m, d in N.MELODY[mkey]:
             t = offset + (lb - 1) * blen + b * BEAT
             sig = lead(note_freq(m), d * BEAT, lead_amp, SR)
@@ -135,8 +142,8 @@ def render_bars(section, buf, send, offset):
 BASS_PAT = {
     "lounge": [(0, 0, 1.5), (1.5, 0, 0.5), (2, 7, 1.0), (3, 0, 0.5),
                (3.5, 2, 0.5)],
-    "verse":  [(0, 0, 1.5), (1.5, 0, 0.5), (2, 7, 1.0), (3, 0, 0.5),
-               (3.5, 2, 0.5)],
+    "verse":  [(0, 0, 1.0), (1, 0, 0.5), (1.5, 7, 0.5), (2, 0, 1.0),
+               (3, 0, 0.5), (3.5, 2, 0.5)],
     "pre":    [(0, 0, 1.0), (1, 0, 1.0), (2, 7, 1.0), (3, 0, 1.0)],
     "chorus": [(0, 0, 0.5), (1, 0, 0.5), (1.5, 7, 0.5), (2, 0, 0.5),
                (2.5, 0, 0.5), (3, 0, 0.5), (3.5, 12, 0.5)],

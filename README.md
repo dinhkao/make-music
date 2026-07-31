@@ -136,3 +136,68 @@ Static in the honey, buzzing in my brain
 python3 honey_build.py
 ffmpeg -i honey-static.wav -codec:a libmp3lame -b:a 192k honey-static.mp3
 ```
+
+---
+
+# ⚡ STATIC SUPERNOVA (bài thứ 3 — 2:21)
+
+**File:** `static-supernova.mp3` · `static-supernova.wav`
+**Ý tưởng:** indie anthem học từ **"She's Electric" của Oasis** (phân tích MIDI thật).
+
+## Học được gì từ MIDI She's Electric?
+
+| Phát hiện từ MIDI | Áp dụng vào Static Supernova |
+|---|---|
+| Key **E major**, 127 BPM, 4/4 | E major, 126 BPM |
+| **Swing mạnh 2:1** (strum dài 2/3 + ngắn 1/3) | Mọi strum/hat/tamb đều swing |
+| Vòng **E ↔ A** (I-IV) — chiêu Oasis | Verse E-A, chorus A-E-B-C#m |
+| Intro **F# ring** (C#+F# vang) | Intro 4 bar F# |
+| Guitar acoustic strum dày | **Karplus-Strong** guitar tổng hợp, strum 5 dây lệch 8ms |
+| Nốt vang dài | EP pad ring mỗi bar |
+
+## Cấu trúc (2:21)
+```
+0:00  Intro — F# ring + tambourine swing
+0:08  Verse — E-A bop, swing strum + melody
+0:23  Pre — A-E-B-C#m leo lên
+0:30  CHORUS — hook "Static supernova" + handclaps + strings
+0:46  Verse 2
+1:01  Pre
+1:09  CHORUS 2 — harmony quãng 3
+1:24  Bridge — F#m-C#m-A-B (middle 8)
+1:31  GUITAR SOLO — KS pentatonic, đỉnh cao bài ⚡
+1:39  CHORUS 3 — bùng nổ cuối
+1:54  Outro — "la la" choir + strum, fade
+```
+
+## Hook chính
+```
+"Sta-tic su-per-no-va" = E5 E5 D#5 C#5 B4 — đi xuống từ nốt cao
+"in my head" = A4 (giữ) B4 C#5
+"va!" = E5 giữ 3 phách — nốt singalong
+```
+
+## Lời
+```
+[Verse]
+You light up every room you're in
+Like a circuit under my skin
+Every spark you leave behind
+Is a fire in my mind
+
+[Chorus]
+Static supernova
+Burning through my radio
+Static supernova
+Wherever you go, I glow
+
+[Bridge]
+And the wires all hum your name
+Every streetlight is a flame
+```
+
+## Chạy lại
+```bash
+python3 supernova_build.py
+ffmpeg -i static-supernova.wav -codec:a libmp3lame -b:a 192k static-supernova.mp3
+```
