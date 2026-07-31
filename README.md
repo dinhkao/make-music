@@ -243,3 +243,25 @@ python3 great-indoors-drums.py   # -> drums_new.npy
 python3 great-indoors.py         # -> THE-GREAT-INDOORS-v2.wav
 ffmpeg -i THE-GREAT-INDOORS-v2.wav -codec:a libmp3lame -b:a 192k THE-GREAT-INDOORS.mp3
 ```
+
+---
+
+# 🎹 THE GREAT INDOORS — VÒNG HỢP ÂM (3:12)
+
+**File:** `THE-GREAT-INDOORS-VONG-HOP-AM.mp3` · `.wav`
+Render bằng **engine magbay loop** (render.py): pad saw detuned 3 lớp + sub bass + pluck FM arpeggio + chorus L/R + tape wobble + reverb.
+
+7 vòng hợp âm của bài, mỗi vòng chơi **2 lần** (loop ×2), nối nhau 1s im lặng:
+
+```
+0:00  INTRO   Amaj7 · C#7 · Dmaj7 · D#dim7
+0:19  VERSE   Amaj7 C#7 Dmaj7 D#dim7 A/E F#7 Bm7 E7sus4
+0:54  REFRAIN Dmaj7 A/C# Bm7 E7sus4 ×2
+1:29  BRIDGE  G# Amaj7 G# Amaj7 C Dmaj7 C Dmaj7
+2:04  RAMP    F#7 B7 E7 A7
+2:23  OUTRO   D Dmaj7 G Gmaj7 Bm Bm/A G A
+2:58  TAG     Amaj7 (V — không giải quyết) 🎯
+```
+
+MIDI gốc trong `tgi-loops/*.mid`, WAV từng vòng trong `tgi-loops/*.wav`.
+Tạo lại: `python3 tgi-loops.py`
