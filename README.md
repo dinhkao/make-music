@@ -265,3 +265,23 @@ Render bằng **engine magbay loop** (render.py): pad saw detuned 3 lớp + sub 
 
 MIDI gốc trong `tgi-loops/*.mid`, WAV từng vòng trong `tgi-loops/*.wav`.
 Tạo lại: `python3 tgi-loops.py`
+
+---
+
+# 📄 BẢN ONE-FILE: `the-great-indoors.py`
+
+**1 file .py duy nhất, tự chứa 100%** — chạy được ở bất kỳ máy nào chỉ cần numpy + scipy:
+
+```bash
+python3 the-great-indoors.py   # -> THE-GREAT-INDOORS-v2.wav (24 giây)
+```
+
+Bên trong file (1109 dòng):
+1. **Engine tempo + nhạc cụ** — tempo map 118→119, Karplus-Strong guitar, Wurli FM, organ, bass, horn, vocal formant (gi_engine)
+2. **Trống modal synthesis** — Bessel membrane, snare wire buzz, hi-hat 2 cymbal (kit)
+3. **Performer nhân hóa** — systematic offsets + Gauss, accent, 5 mic ảo + bleed (perform)
+4. **Render FX** — reverb convolution, chorus, WAV writer
+5. **Drum arrangement** — 12 đoạn, từ cross-stick tới disco choke
+6. **Arrangement** — 312 beat đầy đủ + mix (ducking, carve, Fridmann squash)
+
+Không cần file ngoài, không cần drums_new.npy — mọi thứ trong 1 file.
