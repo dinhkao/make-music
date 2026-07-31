@@ -10,9 +10,10 @@ def kick(amp, sr):
     ph = 2 * np.pi * np.cumsum(f) / sr
     sig = np.sin(ph) * np.exp(-t / 0.05)
     nc = int(0.004 * sr)
-    click = np.random.default_rng(1).standard_normal(nc) * np.exp(-np.arange(nc) / (0.001 * sr))
+    click = np.clip(np.random.default_rng(1).standard_normal(nc), -2.0, 2.0) \
+        * np.exp(-np.arange(nc) / (0.001 * sr))
     out = np.concatenate([click, np.zeros(n - nc)])
-    return ((sig + out * 0.4) * amp).astype(np.float32)
+    return ((sig + out * 0.25) * amp).astype(np.float32)
 
 
 def snare(amp, sr):
@@ -56,6 +57,8 @@ def crackle(dur, amp, sr, seed=7):
             pos = int(i * sr / 8)
             L = int(0.004 * sr)
             if pos + L < n:
-                out[pos:pos + L] += rng.standard_normal(L) * np.exp(-np.arange(L) / (0.0012 * sr))
+                pop = np.clip(rng.standard_normal(L), -2.2, 2.2) \
+                    * np.exp(-np.arange(L) / (0.0012 * sr))
+                out[pos:pos + L] += pop
     hiss = filt(rng.standard_normal(n), sr, "hp", 3000) * 0.06
     return ((out + hiss) * amp).astype(np.float32)

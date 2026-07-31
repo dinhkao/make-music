@@ -17,12 +17,14 @@ def filt(sig, sr, kind="lp", fc=2000.0):
 
 
 def make_ir(sr, secs=1.7, decay=0.55, seed=0):
-    """Exponentially decaying noise impulse response (Schroeder-ish)."""
+    """Exponentially decaying noise IR, L2-normalized (energy-preserving)."""
     n = int(secs * sr)
     t = np.arange(n) / sr
     rng = np.random.default_rng(seed)
     ir = rng.standard_normal(n) * np.exp(-t / decay)
-    return filt(ir, sr, "lp", 4200)
+    ir = filt(ir, sr, "lp", 4200)
+    norm = np.sqrt(np.sum(ir ** 2))
+    return ir / norm if norm > 1e-9 else ir
 
 
 def conv(sig, ir):
@@ -55,16 +57,16 @@ def delay(sig, sr, t=0.375, fb=0.42, taps=6):
     return out[: len(sig)]
 
 
-def master(stereo, sr, gain=0.92):
-    """Soft clip at fixed gain (keeps dynamics, no normalize)."""
-    return np.tanh(stereo * 1.08) * gain
+def master(stereo, sr, gain=0.85):
+    """Gentle soft clip at fixed gain (keeps dynamics)."""
+    return np.tanh(stereo * 0.9) * gain
 
 
 def write_wav(path, stereo, sr):
-    """Write 16-bit stereo WAV."""
+    """Write 16-bit stereo WAV, interleaved L0,R0,L1,R1..."""
     import wave
     pcm = (np.clip(stereo, -1, 1) * 32767.0).astype("<i2")
-    frames = pcm.T.tobytes()
+    frames = pcm.tobytes()  # (N,2) row-major order = L,R interleaved
     with wave.open(path, "wb") as w:
         w.setnchannels(2)
         w.setsampwidth(2)
