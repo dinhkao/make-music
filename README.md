@@ -290,10 +290,13 @@ Không cần file ngoài, không cần drums_new.npy — mọi thứ trong 1 fil
 
 # 🎧 ALBUM INDIE-ELECTRONIC (bài 04 → 13)
 
+📁 **Toàn bộ album nằm trong thư mục [`album-indie-electronic/`](album-indie-electronic/)**
+
 10 bài mới, mỗi bài **1 file `.py` tự chứa** (chỉ cần numpy + scipy), render ra
 **bản có giọng** + **bản instrumental**. Chạy:
 
 ```bash
+cd album-indie-electronic
 python3 04-plastic-halo.py              # -> .wav (cả hai bản)
 python3 04-plastic-halo.py --vocals     # chỉ bản hát
 python3 04-plastic-halo.py --no-vocals  # chỉ instrumental
