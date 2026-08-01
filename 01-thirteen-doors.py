@@ -1,0 +1,1273 @@
+"""01-thirteen-doors - mot file duy nhat, chi can numpy + scipy.
+   python3 01-thirteen-doors.py             -> ca hai ban wav (co giong + instrumental)
+   python3 01-thirteen-doors.py --vocals    -> chi ban co giong
+   python3 01-thirteen-doors.py --no-vocals -> chi ban instrumental
+"""
+# ================================================================= ENGINE (inlined)
+import struct
+import sys
+import os
+import numpy as np
+from scipy import signal as sg
+from scipy.special import jv
+SR = 44100
+rng = np.random.default_rng(430)
+# ===================== TEMPO (configurable) =====================
+TEMPO=[(0,326,126,127)]
+_gb=None; _ct=None; TOTAL=None
+def _bpm(b):
+    for s,e,b0,b1 in TEMPO:
+        if s<=b<e: return b0+(b1-b0)*(b-s)/(e-s)
+    return TEMPO[-1][3]
+def configure(bpm0=126,bpm1=127,end=326):
+    global TEMPO,_gb,_ct,TOTAL
+    TEMPO=[(0,end,bpm0,bpm1)]
+    _gb=np.arange(0,end+2,0.004)
+    _ct=np.concatenate([[0],np.cumsum(np.array([60.0/_bpm(b) for b in _gb])*0.004)[:-1]])
+    TOTAL=T(end)+5
+    return TOTAL
+def T(b): return float(np.interp(b,_gb,_ct))
+def SPB(b): return 60.0/_bpm(b)
+def nn(s):
+    base={'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
+    n=base[s[0]];i=1
+    while i<len(s) and s[i] in '#b': n+=1 if s[i]=='#' else -1;i+=1
+    return 12*(int(s[i:])+1)+n
+def hz(m): return 440.0*2**((m-69)/12)
+def buf(): return np.zeros(int(TOTAL*SR)+SR)
+def put(b,t0,x,g=1.0):
+    i=int(t0*SR)
+    if i<0: x=x[-i:]; i=0
+    n=min(len(x),len(b)-i)
+    if n>0: b[i:i+n]+=x[:n]*g
+def env(L,a,d,s,r):
+    e=np.ones(L); ai=min(int(a*SR),L); e[:ai]=np.linspace(0,1,ai)
+    di=int(d*SR)
+    if ai+di<L: e[ai:ai+di]=np.linspace(1,s,di); e[ai+di:]=s
+    else: e[ai:]=np.linspace(1,s,max(L-ai,1))
+    ri=min(int(r*SR),L); e[L-ri:]*=np.linspace(1,0,ri)**1.3
+    return e
+# ---------- KARPLUS-STRONG ----------
+_KS={}
+def ks(m, dur, damp=0.9955, bright=0.55, seed=0):
+    key=(m,round(dur,2),round(bright,2),round(damp,4),seed)
+    if key in _KS: return _KS[key]
+    f=hz(m); N=max(int(round(SR/f)),2); L=int(dur*SR)+int(0.15*SR)
+    r2=np.random.default_rng(1000+m*7+seed)
+    burst=r2.standard_normal(N)
+    b,a=sg.butter(2,min(900+7000*bright,SR/2-200)/(SR/2),'low'); burst=sg.lfilter(b,a,burst)
+    burst*=np.linspace(1,0.2,N)
+    exc=np.zeros(L); exc[:N]=burst
+    A=np.zeros(N+2); A[0]=1.0; A[N]=-damp/2; A[N+1]=-damp/2
+    y=sg.lfilter([1.0],A,exc)
+    y*=np.exp(-np.arange(L)/SR*0.55)
+    y/= (np.abs(y).max()+1e-9)
+    fo=min(int(0.020*SR),L)
+    y[-fo:]*=np.linspace(1,0,fo)          # loi #14: fade cuoi, khong click
+    ri=min(int(0.0008*SR),L); y[:ri]*=np.linspace(0,1,ri)
+    _KS[key]=y.astype(np.float32)
+    return _KS[key]
+def jangle(b_, t0, m, dur, g=0.10, seed=0):
+    x=ks(m,dur,0.9962,0.72,seed).astype(np.float64)
+    bq,aq=sg.butter(2,[220/(SR/2),6200/(SR/2)],'band'); x=sg.lfilter(bq,aq,x)
+    put(b_,t0,x,g)
+def crunch(b_, t0, m, dur, g=0.09, drive=6.0, seed=0):
+    x=ks(m,dur,0.9950,0.55,seed).astype(np.float64)
+    x=np.tanh(x*drive)
+    bq,aq=sg.butter(2,[300/(SR/2),3800/(SR/2)],'band'); x=sg.lfilter(bq,aq,x)
+    put(b_,t0,x*env(len(x),0.002,0.05,0.85,0.12),g)
+def leadgtr(b_, t0, m, dur, g=0.13, bend=0.0, seed=0):
+    x=ks(m,dur,0.9975,0.65,seed).astype(np.float64)
+    x=np.tanh(x*9.0)
+    L=len(x)
+    if bend:
+        t=np.arange(L)/SR
+        d=(2**((bend*np.minimum(1,t*6))/12)-1)
+        idx=np.clip(np.cumsum(1+d),0,L-1); i0=idx.astype(int); fr=idx-i0
+        x=x[i0]*(1-fr)+x[np.minimum(i0+1,L-1)]*fr
+    bq,aq=sg.butter(2,[380/(SR/2),4200/(SR/2)],'band'); x=sg.lfilter(bq,aq,x)
+    put(b_,t0,x*env(L,0.004,0.1,0.9,0.15),g)
+# ---------- WURLITZER (2-op FM) ----------
+def wurli(b_,t0,m,dur,g=0.13,det=0.0):
+    L=int(dur*SR)+int(0.4*SR); t=np.arange(L)/SR
+    f=hz(m)*2**(det/1200)
+    idx=2.1*np.exp(-t*5.5)+0.35
+    x=np.sin(2*np.pi*f*t+idx*np.sin(2*np.pi*f*2*t))
+    x+=np.sin(2*np.pi*f*t*1.001)*0.4
+    x*=np.exp(-t*2.4)*np.minimum(1,t*260)
+    x*= (1+0.10*np.sin(2*np.pi*5.4*t))
+    bq,aq=sg.butter(2,4200/(SR/2),'low'); x=sg.lfilter(bq,aq,x)
+    put(b_,t0,np.tanh(x*1.3),g)
+# ---------- COMBO ORGAN ----------
+def organ(b_,t0,notes,dur,g=0.07):
+    L=int(dur*SR)+int(0.1*SR); t=np.arange(L)/SR
+    e=env(L,0.012,0.05,0.95,0.06)
+    for m in notes:
+        f=hz(m); x=np.zeros(L)
+        for k,amp in [(1,1.0),(2,.55),(3,.30),(4,.35),(6,.16),(8,.12)]:
+            x+=np.sin(2*np.pi*f*k*t*(1+0.0006*k))*amp
+        x*= (1+0.05*np.sin(2*np.pi*6.6*t+f))
+        put(b_,t0,x*e*0.18,g)
+# ---------- BASS ----------
+def bassn(b_,t0,m,dur,g=0.30,gl=0):
+    L=int(min(dur,1.4)*SR)+int(0.18*SR); t=np.arange(L)/SR
+    f=hz(m); ff=f*(2**(-gl/12*np.exp(-t*26)))
+    ph=2*np.pi*np.cumsum(ff)/SR
+    x=sum(np.sin(ph*k)/k for k in range(1,11))*0.5+np.sin(ph)*0.75+np.sin(ph/2)*0.30
+    bq,aq=sg.butter(2,760/(SR/2),'low'); x=sg.lfilter(bq,aq,x)
+    x*=np.exp(-t*2.6)*np.minimum(1,t*480)
+    put(b_,t0,np.tanh(x*1.35),g)
+# ---------- HORNS ----------
+def horn(b_,t0,m,dur,g=0.10,det=0.0,rough=1.0):
+    L=int(dur*SR)+int(0.25*SR); t=np.arange(L)/SR
+    f=hz(m)*2**(det/1200)
+    vf=1+0.006*np.sin(2*np.pi*4.8*t)*np.minimum(1,t*2.2)
+    drift=1+0.0035*np.sin(2*np.pi*0.7*t+m)
+    ph=2*np.pi*np.cumsum(f*vf*drift)/SR
+    x=sum(np.sin(ph*k)/(k**1.12) for k in range(1,20))
+    x=np.tanh(x*(1.1+0.9*rough))
+    for fc,gg,bw in [(1150,1.0,300),(2200,0.55,420)]:
+        bq,aq=sg.butter(2,[(fc-bw)/(SR/2),(fc+bw)/(SR/2)],'band'); x+=sg.lfilter(bq,aq,x)*gg*0.7
+    bq,aq=sg.butter(2,[230/(SR/2),5200/(SR/2)],'band'); x=sg.lfilter(bq,aq,x)
+    put(b_,t0,x*env(L,0.055,0.18,0.85,0.22),g)
+# ---------- VOCAL FORMANT ----------
+VOW={'a':[(800,.10,90),(1150,.06,110),(2900,.03,160)],
+     'e':[(430,.10,70),(1700,.07,110),(2700,.03,150)],
+     'i':[(300,.10,60),(2150,.08,110),(3000,.03,160)],
+     'o':[(450,.10,70),(820,.06,100),(2830,.02,150)],
+     'u':[(330,.10,60),(700,.05,100),(2530,.02,150)]}
+def voice(f0,L,vow='a',breath=0.22,vib=5.2,vibd=0.005,seed=0):
+    t=np.arange(L)/SR
+    r2=np.random.default_rng(500+seed)
+    vf=1+vibd*np.sin(2*np.pi*vib*t+seed)*np.minimum(1,t*2.5)
+    ph=2*np.pi*np.cumsum(f0*vf)/SR
+    K=int(min(46,(SR/2.2)//max(f0,1)))
+    src=sum(np.sin(ph*k)/(k**1.05) for k in range(1,K+1))*0.5
+    n=r2.standard_normal(L); bq,aq=sg.butter(2,[1200/(SR/2),6500/(SR/2)],'band')
+    src=src+sg.lfilter(bq,aq,n)*breath
+    out=np.zeros(L)
+    for fc,gg,bw in VOW[vow]:
+        bq,aq=sg.butter(2,[max(fc-bw,40)/(SR/2),min(fc+bw,SR/2-100)/(SR/2)],'band')
+        out+=sg.lfilter(bq,aq,src)*gg*14
+    return out
+def sing(b_,t0,m,dur,vow='a',g=0.16,breath=0.24,seed=0,det=0.0):
+    L=int(dur*SR)+int(0.35*SR)
+    x=voice(hz(m)*2**(det/1200),L,vow,breath,seed=seed)
+    put(b_,t0,x*env(L,0.07,0.25,0.78,0.3),g)
+def gang(b_,t0,m,dur,vow='a',g=0.14,n=6,spread=17,jit=0.022):
+    r2=np.random.default_rng(int(t0*1000)%9999)
+    for i in range(n):
+        d=r2.normal(0,spread); j=r2.normal(0,jit)
+        mm=m+(12 if i>=n-2 else 0)
+        sing(b_,t0+j,mm,dur,vow,g/np.sqrt(n)*1.5,breath=0.30,seed=i*13+int(m),det=d)
+# ---------- noise bed ----------
+def noise_sw(b_,t0,dur,g=0.09,up=True,lo=300,hi=9000):
+    L=int(dur*SR); t=np.linspace(0,1,L)
+    n=rng.standard_normal(L)
+    bq,aq=sg.butter(2,[lo/(SR/2),hi/(SR/2)],'band'); n=sg.lfilter(bq,aq,n)
+    put(b_,t0,n*((t**2) if up else ((1-t)**2)),g)
+# ===================== DRUM KIT (MODAL SYNTH) =====================
+IDEAL=[1.0000,1.5934,2.1356,2.2952,2.6528,2.9172,3.1551,3.4998,3.5983,3.6470]
+JMN  =[2.405,3.832,5.136,5.520,6.380,7.016,7.588,8.417,8.654,8.771]
+MORD =[0,1,2,0,3,1,4,2,0,5]
+AIRLOADED=[1.00,1.50,1.98,2.44,2.89,3.36]
+def _hp(x,f,o=2): b,a=sg.butter(o,min(f,SR/2-100)/(SR/2),'high'); return sg.lfilter(b,a,x)
+def _lp(x,f,o=2): b,a=sg.butter(o,min(f,SR/2-100)/(SR/2),'low');  return sg.lfilter(b,a,x)
+def _bp(x,lo,hi,o=2):
+    hi=min(hi,SR/2-100); lo=max(lo,20)
+    b,a=sg.butter(o,[lo/(SR/2),hi/(SR/2)],'band'); return sg.lfilter(b,a,x)
+def modal(f0,taus,gains,L,rng,glide=0.05,tg=0.02,detune_cents=0,ratios=IDEAL):
+    t=np.arange(L)/SR
+    g=1+glide*np.exp(-t/tg)
+    ph=2*np.pi*np.cumsum(g)/SR
+    det=2**(detune_cents/1200)
+    out=np.zeros(L)
+    for r,tau,gn in zip(ratios,taus,gains):
+        f=f0*r*det
+        if f>SR/2.2: continue
+        out+=gn*np.exp(-t/tau)*np.sin(ph*f+rng.uniform(0,2*np.pi))
+    return out
+def bessel_gains(r_rel,rng,n=10,jitter=0.08):
+    r=np.clip(r_rel+rng.normal(0,jitter),0.0,0.92)
+    g=[]
+    for i in range(n):
+        v=abs(jv(MORD[i], JMN[i]*r))
+        g.append(v*10**(rng.normal(0,0.35)))
+    g=np.array(g); return g/ (g.max()+1e-9)
+def _ramp(x, ms=0.7):
+    n=min(int(ms/1000*SR),len(x)); x[:n]*=np.linspace(0,1,n); return x
+class Kit:
+    def __init__(self, seed=7):
+        self.rng=np.random.default_rng(seed)
+        self._cache={}
+    def kick(self, vel=1.0, tune=48.0, click=1.0, mode='acoustic'):
+        R=self.rng; L=int(0.55*SR); t=np.arange(L)/SR
+        det=2**(R.normal(0,28)/1200)
+        if mode=='acoustic':
+            body=np.zeros(L)
+            for k in range(1,7):
+                f=(tune*k*0.9+7)*det
+                tau=0.26/ (k**0.72)
+                body+=(1.0/k**0.9)*np.exp(-t/tau)*np.sin(2*np.pi*f*t+R.uniform(0,2*np.pi))
+            gl=1+0.09*np.exp(-t/0.025)
+            body*= gl
+        else:
+            f=tune*det*(1+2.6*np.exp(-t/0.030))
+            body=np.sin(2*np.pi*np.cumsum(f)/SR+R.uniform(0,2*np.pi))*np.exp(-t/0.16)
+            body+=np.sin(2*np.pi*np.cumsum(f*0.5)/SR)*np.exp(-t/0.22)*0.5
+        fm=np.sin(2*np.pi*185*det*t+ (2.2*np.exp(-t/0.04))*np.sin(2*np.pi*259*t))
+        body+=fm*np.exp(-t/0.045)*0.24
+        n=R.standard_normal(L)*np.exp(-t/0.0045)
+        cl=_lp(_hp(n,220),4200)*click*0.5*vel
+        x=body*vel + cl
+        x=_hp(x,32,4)
+        return _ramp(np.tanh(x*1.5))
+    def snare(self, vel=1.0, tune=205.0, art='center'):
+        R=self.rng; L=int(0.42*SR); t=np.arange(L)/SR
+        r_rel={'center':0.12,'edge':0.62,'ghost':0.34,'rim':0.20,'cross':0.80}[art]
+        g=bessel_gains(r_rel,R)
+        taus=np.array([0.045,0.20,0.17,0.055,0.14,0.11,0.09,0.08,0.05,0.07])
+        taus=taus*(1+R.normal(0,0.10,10))
+        if art=='rim': taus*=0.7
+        det=R.normal(0,30)
+        mem=modal(tune,taus,g,L,R,glide=0.06,tg=0.02,detune_cents=det)
+        mem+=modal(tune*1.42,taus*0.8,g*0.55,L,R,glide=0.05,tg=0.018,
+                   detune_cents=det+R.normal(0,18))*0.6
+        envm=np.abs(sg.lfilter(*sg.butter(2,120/(SR/2),'low'), np.abs(mem)))
+        envm/= (envm.max()+1e-9)
+        thr={'ghost':0.42,'center':0.14,'edge':0.20,'rim':0.06,'cross':0.85}[art]
+        wire_env=np.clip(envm-thr,0,None)/(1-thr)
+        n=R.standard_normal(L)
+        wire=_bp(n,1100,9500,3)
+        buzz=(R.random(L)<0.055).astype(float)
+        buzz=sg.lfilter([1],[1,-0.90],buzz)
+        wire=wire*(0.55+0.85*buzz/ (buzz.max()+1e-9))
+        d=int(R.uniform(0.0005,0.003)*SR)
+        wire=np.concatenate([np.zeros(d),wire])[:L]
+        wire*=wire_env*np.exp(-t/R.uniform(0.11,0.24))
+        stick=_bp(R.standard_normal(L),2200,7000,2)*np.exp(-t/0.0035)
+        if art=='rim':
+            shell=_bp(R.standard_normal(L),420,900,2)*np.exp(-t/0.035)*1.1
+            x=mem*0.55+wire*1.5+stick*1.5+shell
+            x*=vel*2.2
+        elif art=='cross':
+            wood=_bp(R.standard_normal(L),1300,3400,2)*np.exp(-t/0.006)*2.2
+            x=(mem*0.16+wood+wire*0.10)*vel*1.5
+        elif art=='ghost':
+            x=(mem*0.85+wire*0.55+stick*0.35)*vel*0.22
+        else:
+            x=(mem*0.75+wire*1.0+stick*0.8)*vel
+        return _ramp(np.tanh(x*1.25))
+    def flam(self, vel=1.0, tune=205.0, art='center'):
+        R=self.rng
+        gap=int(R.uniform(0.012,0.032)*SR)
+        a=self.snare(vel*R.uniform(0.30,0.48),tune*1.01,'ghost')
+        b=self.snare(vel,tune,art)
+        out=np.zeros(max(len(a),len(b))+gap)
+        out[:len(a)]+=a; out[gap:gap+len(b)]+=b
+        return out
+    def tom(self, vel=1.0, tune=120.0, art='center'):
+        R=self.rng; L=int(0.7*SR); t=np.arange(L)/SR
+        g=bessel_gains(0.20 if art=='center' else 0.6,R,n=6)
+        taus=np.array([0.30,0.42,0.34,0.26,0.20,0.16])*(1+R.normal(0,0.12,6))
+        x=modal(tune,taus,g,L,R,glide=0.08,tg=0.03,detune_cents=R.normal(0,35),
+                ratios=AIRLOADED)
+        x+=modal(tune*1.06,taus*0.85,g*0.5,L,R,glide=0.07,tg=0.028,
+                 ratios=AIRLOADED)*0.5
+        stick=_bp(R.standard_normal(L),1800,5500,2)*np.exp(-t/0.004)
+        return _ramp(np.tanh((x+stick*0.5)*vel*1.2))
+    def _cym(self, L, nmodes, fmin, fmax, tau_lo, tau_hi, seed, migrate=0.10):
+        R=np.random.default_rng(seed); t=np.arange(L)/SR
+        f=np.sort(R.uniform(fmin,fmax,nmodes)**1.0)
+        f=f*(1+R.normal(0,0.02,nmodes))
+        tau=tau_hi*(f/fmin)**(-0.62)*(1+R.normal(0,0.18,nmodes))
+        tau=np.clip(tau,tau_lo,tau_hi)
+        ph=R.uniform(0,2*np.pi,nmodes)
+        amp=(f/fmin)**(-0.42)*(1+R.normal(0,0.35,nmodes))
+        atk=migrate*(f-fmin)/(fmax-fmin)+0.0008
+        out=np.zeros(L)
+        CH=200
+        for i in range(0,nmodes,CH):
+            ff=f[i:i+CH][:,None]; tt=tau[i:i+CH][:,None]
+            aa=amp[i:i+CH][:,None]; pp=ph[i:i+CH][:,None]; kk=atk[i:i+CH][:,None]
+            seg=aa*np.exp(-t/tt)*(1-np.exp(-t/kk))*np.sin(2*np.pi*ff*t+pp)
+            out+=seg.sum(0)
+        return out/ (np.abs(out).max()+1e-9)
+    def hat(self, vel=1.0, openness=0.0, art='tip', variant=None):
+        R=self.rng
+        v=int(R.integers(0,7)) if variant is None else variant
+        o=float(np.clip(openness,0,1))
+        key=('hat',round(o,2),art,v)
+        if key not in self._cache:
+            L=int((0.06+0.75*o)*SR)
+            tau_hi=0.045+0.62*o
+            a=self._cym(L,260,320,15500,0.012,tau_hi,seed=9000+v*13+int(o*100),migrate=0.05*o)
+            b=self._cym(L,260,320,15500,0.012,tau_hi,seed=9500+v*13+int(o*100),migrate=0.05*o)
+            delta=0.004+0.016*o
+            bb=np.interp(np.clip(np.arange(L)*(1+delta),0,L-1),np.arange(L),b)
+            x=a+bb*(0.55+0.45*o)
+            if o<0.15:
+                buzz=(np.random.default_rng(7+v).random(L)<0.09).astype(float)
+                x=x*(1+0.5*buzz)
+            self._cache[key]=(x/ (np.abs(x).max()+1e-9)).astype(np.float32)
+        x=self._cache[key].astype(np.float64).copy()
+        L=len(x); t=np.arange(L)/SR
+        if art=='edge':  x=_bp(x,380,11000,2)*1.6
+        elif art=='tip': x=_bp(x,900,15000,2)
+        elif art=='foot':x=_bp(x,200,4200,2)*1.2
+        sh=2**(R.normal(0,0.018))
+        idx=np.clip(np.arange(L)*sh,0,L-1); i0=idx.astype(int); fr=idx-i0
+        x=x[i0]*(1-fr)+x[np.minimum(i0+1,L-1)]*fr
+        return _ramp(x*vel*np.exp(-t/(0.05+0.85*o)))
+    def crash(self, vel=1.0, size=1.0, variant=None):
+        R=self.rng
+        v=int(R.integers(0,4)) if variant is None else variant
+        key=('crash',round(size,2),v)
+        if key not in self._cache:
+            L=int(1.5*size*SR)
+            x=self._cym(L,700,260,15800,0.10,1.35*size,seed=3000+v*17,migrate=0.22)
+            self._cache[key]=x.astype(np.float32)
+        x=self._cache[key].astype(np.float64)
+        sh=2**(R.normal(0,0.02)); L=len(x)
+        idx=np.clip(np.arange(L)*sh,0,L-1); i0=idx.astype(int); fr=idx-i0
+        return _ramp((x[i0]*(1-fr)+x[np.minimum(i0+1,L-1)]*fr)*vel)
+    def ride(self, vel=1.0, bell=False, variant=None):
+        R=self.rng
+        v=int(R.integers(0,5)) if variant is None else variant
+        key=('ride',bell,v)
+        if key not in self._cache:
+            L=int(0.95*SR)
+            if bell: x=self._cym(L,60,520,7000,0.20,0.85,seed=4400+v*11,migrate=0.02)
+            else:    x=self._cym(L,420,330,14000,0.06,0.72,seed=4000+v*11,migrate=0.10)
+            self._cache[key]=x.astype(np.float32)
+        x=self._cache[key].astype(np.float64)
+        ping=_bp(self.rng.standard_normal(len(x)),2500,7000,2)*np.exp(-np.arange(len(x))/SR/0.006)
+        return _ramp((x+ping*(0.45 if not bell else 0.8))*vel)
+    def clap(self, vel=1.0):
+        R=self.rng; L=int(0.45*SR); t=np.arange(L)/SR
+        out=np.zeros(L); n=int(R.integers(3,7))
+        for i in range(n):
+            d=int(max(0,R.normal(i*0.011,0.003))*SR)
+            b=_bp(R.standard_normal(L),1050,4400,2)*np.exp(-t/0.006)
+            out[d:]+=b[:L-d]*R.uniform(0.6,1.0)
+        tail=_bp(R.standard_normal(L),900,3600,2)*np.exp(-t/0.055)*0.55
+        return _ramp((out+tail)*vel)
+    def tamb(self, vel=1.0):
+        R=self.rng; L=int(0.3*SR); t=np.arange(L)/SR
+        x=np.zeros(L)
+        for fr in (4700,6100,7900,9800,12200):
+            b,a=sg.iirpeak(fr/(SR/2),R.uniform(45,75)); x+=sg.lfilter(b,a,R.standard_normal(L))
+        jingle=(R.random(L)<0.14).astype(float)
+        return _ramp(x*np.exp(-t/R.uniform(0.028,0.055))*(0.6+0.7*jingle)*vel*0.45)
+    def shaker(self, vel=1.0):
+        R=self.rng; L=int(0.16*SR); t=np.arange(L)/SR
+        n=_bp(R.standard_normal(L),4200,13000,2)
+        return _ramp(n*np.exp(-t/R.uniform(0.016,0.030))*vel*0.5)
+    def conga(self, vel=1.0, tune=210.0, art='open'):
+        R=self.rng; L=int(0.45*SR); t=np.arange(L)/SR
+        g=bessel_gains(0.15 if art=='open' else 0.55,R,n=6)
+        taus=np.array([0.20,0.14,0.10,0.08,0.06,0.05])*(1+R.normal(0,0.12,6))
+        if art=='slap': taus*=0.35
+        x=modal(tune,taus,g,L,R,glide=0.10,tg=0.02,detune_cents=R.normal(0,25),ratios=AIRLOADED)
+        skin=_bp(R.standard_normal(L),900,5200,2)*np.exp(-t/(0.010 if art=='slap' else 0.004))
+        return _ramp(np.tanh((x+skin*(1.6 if art=='slap' else 0.7))*vel*1.3))
+    def wood(self, vel=1.0, tune=850.0):
+        R=self.rng; L=int(0.14*SR); t=np.arange(L)/SR
+        x=np.sin(2*np.pi*tune*t)*np.exp(-t/0.012)+np.sin(2*np.pi*tune*2.7*t)*np.exp(-t/0.006)*0.5
+        x+=_bp(R.standard_normal(L),1500,6000,2)*np.exp(-t/0.002)*0.8
+        return _ramp(np.tanh(x*vel*1.4))
+# ===================== PERFORMER + MIX_KIT =====================
+SIGMA={'kick':0.0055,'snare':0.0026,'hat':0.0031,'tom':0.0035,'cym':0.0040,'perc':0.0045}
+ACC8 =[1.00,0.62,0.85,0.62,0.95,0.62,0.85,0.62]
+ACC16=[1.00,0.45,0.70,0.45,0.85,0.45,0.68,0.45,0.95,0.45,0.70,0.45,0.85,0.48,0.68,0.52]
+class Performer:
+    def __init__(self, kit, Tfunc, SPBfunc, total_s, seed=11, style='indie'):
+        self.k=kit; self.T=Tfunc; self.SPB=SPBfunc
+        self.rng=np.random.default_rng(seed)
+        N=int(total_s*SR)+SR
+        self.bus={n:np.zeros(N) for n in ['kick','snare','hat','tom','cym','perc']}
+        self.style=style
+        R=np.random.default_rng(seed+1)
+        self.sysoff={}
+        for inst in SIGMA:
+            for p in range(16):
+                self.sysoff[(inst,p)]=R.normal(0,0.0034)
+        self.laid={'kick':0.0,'snare':0.012 if style=='indie' else 0.004,
+                   'hat':-0.002,'tom':0.006,'cym':0.0,'perc':0.003}
+        self.openhats=[]
+        self.hum=1.0
+    def _t(self, beat, inst, pos16):
+        p=int(round(pos16))%16
+        metric = 0.004 if p%4==0 else -0.0032
+        h=self.hum
+        j=self.rng.normal(0,SIGMA[inst]*h)
+        return self.T(beat)+self.sysoff[(inst,p)]*h+j+metric*h+self.laid[inst]*h
+    def _add(self,name,t0,x,g=1.0):
+        b=self.bus[name]; i=int(t0*SR)
+        if i<0: x=x[-i:]; i=0
+        n=min(len(x),len(b)-i)
+        if n>0: b[i:i+n]+=x[:n]*g
+        return i
+    def _v(self,base,pos16,grid=16,arc=1.0):
+        acc=(ACC16[int(pos16)%16] if grid==16 else ACC8[int(pos16/2)%8])
+        return base*acc*arc*(1+self.rng.normal(0,0.042*self.hum))
+    def K(self,beat,pos16,v=1.0,arc=1.0,mode='acoustic',tune=48.0):
+        vv=self._v(v,pos16,arc=arc)
+        self._add('kick',self._t(beat,'kick',pos16),self.k.kick(vv,tune,mode=mode))
+    def S(self,beat,pos16,v=1.0,art='center',arc=1.0,tune=205.0):
+        vv=self._v(v,pos16,arc=arc)
+        x=self.k.flam(vv,tune,art) if art=='flam' else self.k.snare(vv,tune,art)
+        self._add('snare',self._t(beat,'snare',pos16),x)
+    def H(self,beat,pos16,v=1.0,o=0.0,art='tip',arc=1.0,choke_beat=None):
+        vv=self._v(v,pos16,grid=16,arc=arc)
+        x=self.k.hat(vv,o,art)
+        i=self._add('hat',self._t(beat,'hat',pos16),x)
+        if o>0.25 and choke_beat is not None:
+            self.openhats.append((i,int(self.T(choke_beat)*SR)))
+    def TM(self,beat,pos16,v=1.0,tune=120.0,arc=1.0):
+        self._add('tom',self._t(beat,'tom',pos16),self.k.tom(self._v(v,pos16,arc=arc),tune))
+    def CR(self,beat,pos16,v=1.0,size=1.0):
+        self._add('cym',self._t(beat,'cym',pos16),self.k.crash(v*(1+self.rng.normal(0,.04)),size))
+    def RD(self,beat,pos16,v=1.0,bell=False,arc=1.0):
+        self._add('cym',self._t(beat,'cym',pos16),self.k.ride(self._v(v,pos16,arc=arc),bell))
+    def CL(self,beat,pos16,v=1.0,arc=1.0):
+        self._add('perc',self._t(beat,'perc',pos16),self.k.clap(self._v(v,pos16,arc=arc)))
+    def TB(self,beat,pos16,v=1.0,arc=1.0):
+        self._add('perc',self._t(beat,'perc',pos16),self.k.tamb(self._v(v,pos16,arc=arc)))
+    def SH(self,beat,pos16,v=1.0,arc=1.0):
+        self._add('perc',self._t(beat,'perc',pos16),self.k.shaker(self._v(v,pos16,arc=arc)))
+    def CG(self,beat,pos16,v=1.0,tune=210.0,art='open',arc=1.0):
+        self._add('perc',self._t(beat,'perc',pos16),self.k.conga(self._v(v,pos16,arc=arc),tune,art))
+    def WD(self,beat,pos16,v=1.0,tune=850.0,arc=1.0):
+        self._add('perc',self._t(beat,'perc',pos16),self.k.wood(self._v(v,pos16,arc=arc),tune))
+    def apply_chokes(self):
+        h=self.bus['hat']
+        for start,cut in self.openhats:
+            if cut>start and cut<len(h):
+                n=min(int(0.005*SR),len(h)-cut)
+                h[cut:cut+n]*=np.linspace(1,0.25,n)
+    def fill(self, beat_start, beats=2.0, kind='tom', intensity=1.0, next_crash_beat=None):
+        R=self.rng
+        if kind=='tom':
+            toms=[168,140,112,92]
+            n=max(int(beats*4),1)
+            for i in range(n):
+                p=beat_start+i*0.25
+                v=(0.55+0.45*i/max(n-1,1))*intensity
+                self.TM(p,(i%16),v,tune=toms[min(int(i/max(n/4,1)),3)])
+                if i%4==0: self.K(p,(i%16),0.6*intensity)
+        elif kind=='snare':
+            n=max(int(beats*4),1)
+            for i in range(n):
+                p=beat_start+i*0.25
+                v=(0.45+0.55*i/max(n-1,1))*intensity
+                art='ghost' if (i%4 in (1,2) and i<n-4) else 'center'
+                self.S(p,(i%16),v,art=art)
+        elif kind=='roll':
+            n=max(int(beats*8),1)
+            for i in range(n):
+                p=beat_start+i*0.125
+                self.S(p,int(i/2)%16,(0.30+0.70*i/max(n-1,1))*intensity,
+                       art='ghost' if i<n*0.5 else 'center')
+        elif kind=='negative':
+            self.K(beat_start,0,0.9*intensity)
+            self.S(beat_start+beats-0.25,12,0.8*intensity,art='rim')
+        elif kind=='stutter':
+            n=max(int(beats*4),1)
+            for i in range(n):
+                p=beat_start+i*0.25
+                if i%3==0: self.K(p,i%16,0.85*intensity)
+                else:      self.S(p,i%16,(0.4+0.5*(i/n))*intensity,
+                                  art='ghost' if i%3==1 else 'center')
+        elif kind=='trib':                       # 3 tren luoi 4, kieu math-rock
+            n=max(int(beats*3),1)
+            for i in range(n):
+                p=beat_start+i*(beats/n)
+                if i%3==0: self.K(p,int(i*16/max(n,1))%16,0.9*intensity)
+                else: self.TM(p,int(i*16/max(n,1))%16,0.6*intensity,tune=[150,120,96][i%3])
+        if next_crash_beat is not None:
+            self.CR(next_crash_beat,0,0.85*intensity)
+            self.K(next_crash_beat,0,1.0*intensity)
+def delay(x,ms):
+    d=int(ms/1000*SR); return np.concatenate([np.zeros(d),x])[:len(x)]
+def mix_kit(bus, room_amount=0.22, oh_amount=0.85, lofi=0.0, lpf=9000):
+    K,S,H,TMb,CY,PC=(bus['kick'],bus['snare'],bus['hat'],bus['tom'],bus['cym'],bus['perc'])
+    kick_m  = K + _lp(delay(S,0.6),800)*0.11 + _lp(delay(TMb,0.8),700)*0.09
+    snare_m = S + _lp(delay(K,0.5),650)*0.15 + _hp(delay(H,0.3),1500)*0.17 + delay(TMb,0.7)*0.12
+    hat_m   = _hp(H,400) + _hp(delay(S,0.4),900)*0.20
+    tom_m   = TMb + _lp(delay(K,0.6),600)*0.10 + delay(S,0.5)*0.14
+    ohsrc = _lp(K,900)*0.42 + S*0.85 + H*0.95 + TMb*0.75 + CY*1.0 + PC*0.6
+    OH    = _hp(delay(ohsrc,3.8),120)
+    rsrc  = _lp(K,1200)*0.6 + S + H*0.7 + TMb + CY*0.9 + PC*0.7
+    RM    = delay(rsrc,8.7)
+    for d,g in [(17,0.5),(23,0.38),(31,0.3),(41,0.22),(53,0.16)]:
+        RM=RM+delay(rsrc,8.7+d)*g
+    RM=_bp(np.tanh(RM*1.5),180,7000,2)
+    dry = kick_m*1.0 + snare_m*0.95 + hat_m*0.55 + tom_m*0.8 + CY*0.5 + PC*0.85
+    out = dry + OH*oh_amount + RM*room_amount
+    if lofi>0:
+        step=2**(1+int(6*(1-lofi)))
+        out=(1-lofi)*out+lofi*np.round(out*step)/step
+    return _lp(out,lpf,3)
+# ===================== RENDER FX =====================
+_IR = {}
+def _ir(decay=1.6):
+    if decay in _IR: return _IR[decay]
+    n = int(decay*SR)
+    r = np.random.default_rng(7)
+    e = np.exp(-np.arange(n)/(decay*SR/4.2))
+    irL = r.standard_normal(n)*e; irR = r.standard_normal(n)*e
+    b,a = sg.butter(2, 3600/(SR/2), 'low')
+    irL = sg.lfilter(b,a,irL); irR = sg.lfilter(b,a,irR)
+    irL[:int(0.035*SR)] = 0; irR[:int(0.035*SR)] = 0
+    irL/=np.abs(irL).sum()/8; irR/=np.abs(irR).sum()/8
+    _IR[decay]=(irL,irR); return _IR[decay]
+def reverb(l, r, decay=1.6, wet=0.28):
+    irL, irR = _ir(decay)
+    wl = sg.fftconvolve(l, irL)[:len(l)]
+    wr = sg.fftconvolve(r, irR)[:len(r)]
+    return l*(1-wet)+wl*wet, r*(1-wet)+wr*wet
+def chorus(x):
+    n=len(x); t=np.arange(n)/SR
+    def tap(rate, depth_ms, ph):
+        d = (12 + depth_ms*np.sin(2*np.pi*rate*t + ph))/1000*SR
+        idx = np.arange(n) - d
+        idx = np.clip(idx, 0, n-1)
+        i0 = idx.astype(int); fr = idx-i0
+        i1 = np.minimum(i0+1, n-1)
+        return x[i0]*(1-fr) + x[i1]*fr
+    l = 0.72*x + 0.5*tap(0.27, 5.5, 0.0) + 0.3*tap(0.41, 3.0, 1.1)
+    r = 0.72*x + 0.5*tap(0.31, 5.5, 2.3) + 0.3*tap(0.37, 3.0, 3.9)
+    return l, r
+def echo(x, ms, fb=0.35, n=6, g=0.5):
+    out=np.zeros_like(x); a=g
+    for i in range(1,n+1):
+        out+=delay(x,ms*i)*a; a*=fb
+    return out
+def write_wav(path, data):
+    d = np.clip(data, -1, 1)
+    pcm = (d*32767).astype('<i2')
+    n = pcm.size*2
+    with open(path,'wb') as f:
+        f.write(b'RIFF'+struct.pack('<I',36+n)+b'WAVEfmt '+struct.pack('<IHHIIHH',16,1,2,SR,SR*4,4,16)+b'data'+struct.pack('<I',n))
+        f.write(pcm.tobytes())
+configure()
+
+# ================================================================= NHAC CU MO RONG (bang mau Geese)
+def _fade(x, ms_in=1.0, ms_out=12.0):
+    a=min(int(ms_in/1000*SR),len(x)); b=min(int(ms_out/1000*SR),len(x))
+    if a>1: x[:a]*=np.linspace(0,1,a)
+    if b>1: x[-b:]*=np.linspace(1,0,b)
+    return x
+# --- dan day keo (viola / violin drone kieu Venus in Furs) ---
+def bowed(b_,t0,m,dur,g=0.09,rough=0.5,det=0.0,atk=0.16,seed=0):
+    L=int(dur*SR)+int(0.12*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(700+seed+int(m))
+    f=hz(m)*2**(det/1200)
+    drift=1+0.0022*np.sin(2*np.pi*0.33*t+seed)+0.0016*np.sin(2*np.pi*0.11*t)
+    vib=1+0.0035*np.sin(2*np.pi*4.6*t)*np.clip((t-atk)*2.0,0,1)
+    ph=2*np.pi*np.cumsum(f*drift*vib)/SR
+    x=np.zeros(L)
+    for k in range(1,26):
+        x+=np.sin(ph*k+R.uniform(0,6.28))/(k**(1.0+0.35*(1-rough)))
+    scr=_bp(R.standard_normal(L),1800,7000,2)*0.06*rough
+    scr*= (1+0.9*np.sin(2*np.pi*0.9*t))
+    x=x*0.35+scr
+    for fc,gg,bw in [(430,0.9,120),(980,0.55,220),(2400,0.35,500)]:
+        x+=_bp(x,fc-bw,fc+bw,2)*gg*0.5
+    e=np.clip(t/atk,0,1)**1.4
+    ro=min(int(0.09*SR),L); e[-ro:]*=np.linspace(1,0,ro)**1.2
+    put(b_,t0,_fade(np.tanh(x*1.2)*e),g)
+# --- dan piano tack / upright (day co dinh ghim) ---
+def tackpiano(b_,t0,m,dur,g=0.11,tack=0.7,seed=0):
+    L=int(min(dur,3.2)*SR)+int(0.5*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(800+seed+int(m))
+    f=hz(m); x=np.zeros(L)
+    B=0.00042
+    for k in range(1,17):
+        fk=f*k*np.sqrt(1+B*k*k)
+        if fk>SR/2.2: break
+        tau=(2.2/(1+0.42*k))*(1+R.normal(0,0.07))
+        x+=np.exp(-t/tau)*np.sin(2*np.pi*fk*t+R.uniform(0,6.28))/(k**1.15)
+    ham=_bp(R.standard_normal(L),900,6500,2)*np.exp(-t/0.0035)
+    tk=_bp(R.standard_normal(L),2600,11000,2)*np.exp(-t/0.0016)*tack*2.2
+    x=x*0.5+ham*0.6+tk
+    put(b_,t0,_fade(np.tanh(x*1.25)),g)
+# --- clavinet (funk, ngan, sac) ---
+def clav(b_,t0,m,dur,g=0.10,seed=0):
+    x=ks(m,min(dur,0.9),0.9905,0.85,seed).astype(np.float64)
+    x=np.tanh(x*3.4)
+    x=_bp(x,420,5200,2)
+    L=len(x); t=np.arange(L)/SR
+    x*=np.exp(-t*(3.2+2.4/max(dur,0.08)))
+    put(b_,t0,_fade(x),g)
+# --- guitar slide / bottleneck ---
+def slidegtr(b_,t0,m0,m1,dur,g=0.11,seed=0,drive=4.0):
+    L=int(dur*SR)+int(0.25*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(900+seed)
+    tr=np.clip((t-0.05)/max(dur*0.45,0.05),0,1)**0.85
+    f=hz(m0)*2**((m1-m0)*tr/12)
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=sum(np.sin(ph*k+R.uniform(0,6.28))/(k**1.25) for k in range(1,14))
+    x=np.tanh(x*drive)
+    x+=_bp(R.standard_normal(L),2500,8000,2)*np.exp(-t/0.02)*0.25
+    x=_bp(x,260,5000,2)
+    e=np.minimum(1,t*90)*np.exp(-t*1.5)
+    put(b_,t0,_fade(x*e),g)
+# --- marimba / vibes go ---
+def marimba(b_,t0,m,dur,g=0.10,metal=False,seed=0):
+    L=int(min(dur,2.4)*SR)+int(0.3*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(1100+seed+int(m)); f=hz(m)
+    rat=[1.0,3.93,9.6,16.5] if not metal else [1.0,4.0,10.7,18.4]
+    tau=[0.42,0.16,0.08,0.05] if not metal else [1.6,0.9,0.5,0.3]
+    x=np.zeros(L)
+    for r,ta,a in zip(rat,tau,[1.0,0.42,0.18,0.09]):
+        if f*r>SR/2.2: continue
+        x+=a*np.exp(-t/(ta*(1+R.normal(0,0.08))))*np.sin(2*np.pi*f*r*t+R.uniform(0,6.28))
+    mal=_bp(R.standard_normal(L),700,4200,2)*np.exp(-t/0.0022)*0.5
+    if metal: x*= (1+0.22*np.sin(2*np.pi*5.5*t))
+    put(b_,t0,_fade(np.tanh((x+mal)*1.1)),g)
+# --- mellotron / sao bang tu (wow-flutter) ---
+def mellotron(b_,t0,m,dur,g=0.09,kind='flute',seed=0):
+    L=int(min(dur,8.0)*SR)+int(0.25*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(1200+seed+int(m))
+    wow=1+0.0042*np.sin(2*np.pi*0.55*t+R.uniform(0,6))+0.0018*np.sin(2*np.pi*6.3*t)
+    f=hz(m)*wow
+    ph=2*np.pi*np.cumsum(f)/SR
+    if kind=='flute':
+        x=np.sin(ph)+0.22*np.sin(ph*2)+0.07*np.sin(ph*3)
+        x+=_bp(R.standard_normal(L),1500,7000,2)*0.30
+    elif kind=='choir':
+        x=sum(np.sin(ph*k+R.uniform(0,6))/(k**1.2) for k in range(1,14))*0.4
+        for fc,gg,bw in [(600,1.0,150),(1100,0.6,220),(2600,0.3,500)]:
+            x+=_bp(x,fc-bw,fc+bw,2)*gg*0.7
+        x+=_bp(R.standard_normal(L),900,5000,2)*0.10
+    else:  # strings
+        x=sg.lfilter([1],[1,-0.2],np.sign(np.sin(ph))*0.3+np.sin(ph)*0.7)
+        x=_lp(x,3800,2)
+    hiss=R.standard_normal(L)*0.012
+    x=_lp(x,6800,2)+hiss
+    e=np.minimum(1,t*14)
+    ro=min(int(0.10*SR),L); e[-ro:]*=np.linspace(1,0,ro)
+    put(b_,t0,_fade(x*e),g)
+# --- guitar nylon (fingerpick) ---
+def nylon(b_,t0,m,dur,g=0.11,seed=0):
+    x=ks(m,min(dur,2.6),0.9938,0.30,seed).astype(np.float64)
+    x=_bp(x,150,3200,2)
+    put(b_,t0,_fade(x),g)
+# --- guitar 12 day chimey ---
+def chime12(b_,t0,m,dur,g=0.09,seed=0):
+    x=ks(m,min(dur,3.0),0.9970,0.80,seed).astype(np.float64)
+    y=ks(m+12,min(dur,3.0),0.9964,0.86,seed+3).astype(np.float64)*0.55
+    n=min(len(x),len(y)); x=x[:n]+np.roll(y[:n],int(0.006*SR))
+    x=_bp(x,300,9000,2)
+    put(b_,t0,_fade(x),g)
+# --- bass fuzz ---
+def fuzzbass(b_,t0,m,dur,g=0.20,gl=0,seed=0):
+    L=int(min(dur,2.0)*SR)+int(0.15*SR); t=np.arange(L)/SR
+    f=hz(m)*(2**(-gl/12*np.exp(-t*22)))
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=np.sign(np.sin(ph))*0.6+np.sin(ph)*0.9+np.sin(ph*2)*0.25
+    x=np.tanh(x*7.0)
+    x=_bp(x,55,2600,2)
+    x*=np.minimum(1,t*300)*np.exp(-t*1.1)
+    put(b_,t0,_fade(x),g)
+# --- bass sub thuan ---
+def subbass(b_,t0,m,dur,g=0.26,gl=0):
+    L=int(min(dur,3.0)*SR)+int(0.12*SR); t=np.arange(L)/SR
+    f=hz(m)*(2**(-gl/12*np.exp(-t*20)))
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=np.sin(ph)+0.12*np.sin(ph*2)
+    x*=np.minimum(1,t*160)*np.exp(-t*0.9)
+    put(b_,t0,_fade(x,2.0,25.0),g)
+# --- bass flatwound ngon tay (ban le, co tieng day) ---
+def fingerbass(b_,t0,m,dur,g=0.28,gl=0,dead=False,seed=0):
+    L=int(min(dur,1.6)*SR)+int(0.16*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(1300+seed+int(m))
+    f=hz(m)*(2**(-gl/12*np.exp(-t*24)))
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=sum(np.sin(ph*k+R.uniform(0,6))/(k**1.45) for k in range(1,9))
+    x+=_bp(R.standard_normal(L),700,3000,2)*np.exp(-t/0.004)*0.5   # tieng ngon tay
+    x=_lp(x,900 if not dead else 380,2)
+    x*=np.minimum(1,t*420)*np.exp(-t*(2.4 if not dead else 12.0))
+    put(b_,t0,_fade(np.tanh(x*1.3)),g)
+# --- ken trombone (dam, co growl) ---
+def bone(b_,t0,m,dur,g=0.10,det=0.0,growl=0.4,seed=0):
+    L=int(dur*SR)+int(0.2*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(1400+seed+int(m))
+    f=hz(m)*2**(det/1200)
+    vf=1+0.005*np.sin(2*np.pi*5.1*t)*np.minimum(1,t*3)
+    ph=2*np.pi*np.cumsum(f*vf)/SR
+    x=sum(np.sin(ph*k)/(k**0.92) for k in range(1,22))
+    x=np.tanh(x*(1.4+2.2*growl))
+    for fc,gg,bw in [(520,1.0,180),(1200,0.7,320),(2100,0.35,420)]:
+        x+=_bp(x,fc-bw,fc+bw,2)*gg*0.6
+    x=_bp(x,90,4600,2)
+    x+=_bp(R.standard_normal(L),400,2500,2)*np.exp(-t/0.03)*0.18
+    put(b_,t0,_fade(x*env(L,0.035,0.14,0.86,0.18)),g)
+# --- organ gospel qua Leslie ---
+def leslie(x, rate=6.4, depth=0.35, seed=0):
+    n=len(x); t=np.arange(n)/SR
+    lfo=np.sin(2*np.pi*rate*t)
+    d=(4.5+3.0*lfo)/1000*SR
+    idx=np.clip(np.arange(n)-d,0,n-1); i0=idx.astype(int); fr=idx-i0
+    y=x[i0]*(1-fr)+x[np.minimum(i0+1,n-1)]*fr
+    am=1+depth*lfo
+    return y*am
+def gospelorgan(b_,t0,notes,dur,g=0.08,drive=1.6):
+    L=int(min(dur,10.0)*SR)+int(0.12*SR); t=np.arange(L)/SR
+    out=np.zeros(L)
+    for m in notes:
+        f=hz(m)
+        for k,amp in [(0.5,.45),(1,1.0),(1.5,.30),(2,.62),(3,.34),(4,.40),(5,.20),(6,.18),(8,.14)]:
+            ff=f*k
+            if ff>SR/2.2: continue
+            out+=np.sin(2*np.pi*ff*t*(1+0.0004*k))*amp
+    out=np.tanh(out*drive*0.22)
+    e=np.minimum(1,t*130); ro=min(int(0.035*SR),L); e[-ro:]*=np.linspace(1,0,ro)
+    put(b_,t0,_fade(out*e),g)
+# --- dan cua / theremin (drone lo lung) ---
+def saw_drone(b_,t0,m,dur,g=0.06,det=0.0,seed=0):
+    L=int(dur*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(1500+seed)
+    f=hz(m)*2**(det/1200)*(1+0.0016*np.sin(2*np.pi*0.19*t+R.uniform(0,6)))
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=np.sin(ph)+0.10*np.sin(ph*3)+0.04*np.sin(ph*5)
+    x*= (1+0.10*np.sin(2*np.pi*5.9*t))
+    e=np.minimum(1,t*3.0); ro=min(int(0.5*SR),L); e[-ro:]*=np.linspace(1,0,ro)
+    put(b_,t0,_fade(x*e),g)
+# --- bang tu chay nguoc (khong phai riser: mot lop tinh) ---
+def tapewarp(x, depth=0.0035, rate=0.42, seed=1):
+    n=len(x); t=np.arange(n)/SR
+    R=np.random.default_rng(seed)
+    w=depth*np.sin(2*np.pi*rate*t+R.uniform(0,6))+depth*0.4*np.sin(2*np.pi*rate*3.7*t)
+    idx=np.clip(np.cumsum(1+w),0,n-1); i0=idx.astype(int); fr=idx-i0
+    return x[i0]*(1-fr)+x[np.minimum(i0+1,n-1)]*fr
+
+# ================================================================= GIONG HAT CO PHU AM
+CONS={
+ 'd' :('plos',0.013,260,2800,1.00), 't':('plos',0.015,1600,7500,1.05),
+ 'k' :('plos',0.017,800,4200,0.95), 'b':('plos',0.013,110,900,0.95),
+ 'p' :('plos',0.015,280,1900,0.80), 'g':('plos',0.017,180,1500,0.90),
+ 's' :('fric',0.070,4200,11500,0.55),'sh':('fric',0.082,2100,7200,0.62),
+ 'f' :('fric',0.058,1400,7800,0.34), 'h':('fric',0.052,420,3600,0.30),
+ 'th':('fric',0.055,2900,9500,0.28), 'v':('fric',0.052,900,4200,0.30),
+ 'z' :('fric',0.058,3200,9200,0.42),
+ 'm' :('nas', 0.058,260,0,1.0),      'n':('nas',0.052,330,0,1.0),
+ 'ng':('nas', 0.060,290,0,0.9),
+ 'l' :('liq', 0.046,380,0,1.0),      'r':('liq',0.052,1250,0,1.0),
+ 'w' :('liq', 0.056,300,0,1.0),      'y':('liq',0.048,2150,0,1.0),
+ 'ch':('affr',0.072,2000,7400,0.85), 'j':('affr',0.066,1150,5200,0.72),
+ '  ':('none',0.0,0,0,0.0), '':('none',0.0,0,0,0.0),
+}
+def _consonant(cname, f0, g, seed):
+    typ,cd,lo,hi,amp=CONS.get(cname,CONS[''])
+    if typ=='none': return np.zeros(1),0.0
+    L=max(int(cd*SR),8); t=np.arange(L)/SR
+    R=np.random.default_rng(2000+seed+len(cname))
+    if typ=='plos':
+        x=_bp(R.standard_normal(L),lo,hi,2)*np.exp(-t/(cd*0.28))
+        if cname in ('b','d','g'):   # co tieng thanh quan
+            x+=np.sin(2*np.pi*f0*0.9*t)*np.exp(-t/(cd*0.5))*0.35
+        x*=amp*1.5
+    elif typ=='fric':
+        e=np.minimum(1,t/(cd*0.25))*np.exp(-np.maximum(0,t-cd*0.5)/(cd*0.5))
+        x=_bp(R.standard_normal(L),lo,hi,3)*e*amp*1.15
+        if cname in ('v','z'): x+=np.sin(2*np.pi*f0*t)*e*0.30
+    elif typ=='affr':
+        h=max(int(L*0.32),4)
+        x=np.zeros(L)
+        x[:h]=_bp(R.standard_normal(h),1500,6000,2)*np.exp(-np.arange(h)/SR/0.003)
+        x[h:]=_bp(R.standard_normal(L-h),lo,hi,3)*np.exp(-np.arange(L-h)/SR/(cd*0.55))
+        x*=amp*1.4
+    elif typ=='nas':
+        ph=2*np.pi*f0*t
+        x=sum(np.sin(ph*k)/(k**1.9) for k in range(1,7))
+        x=_bp(x,max(lo-140,60),lo+260,2)*3.0
+        x*=np.minimum(1,t/0.006)*amp
+    else:  # liq
+        ph=2*np.pi*f0*t
+        x=sum(np.sin(ph*k)/(k**1.25) for k in range(1,14))
+        x=_bp(x,max(lo-220,60),lo+420,2)*2.4
+        x*=np.minimum(1,t/0.008)*amp
+        x+=_bp(R.standard_normal(L),600,2800,2)*0.05
+    return x*g, cd
+def say(b_, t0, m, dur, vow='a', cons='', g=0.16, style='croon', breath=0.24,
+        seed=0, det=0.0, drift=0.0):
+    """Mot am tiet: phu am dan vao + nguyen am co cao do.
+       style: croon | deadpan | shout | whisper | falsetto"""
+    f0=hz(m)*2**(det/1200)
+    vib  ={'croon':5.2,'deadpan':4.4,'shout':6.1,'whisper':4.0,'falsetto':5.8}[style]
+    vibd ={'croon':0.0055,'deadpan':0.0015,'shout':0.009,'whisper':0.002,'falsetto':0.011}[style]
+    br   =breath*{'croon':1.0,'deadpan':1.25,'shout':0.8,'whisper':3.2,'falsetto':1.4}[style]
+    L=int(max(dur,0.06)*SR)+int(0.20*SR)
+    t=np.arange(L)/SR
+    # phu am
+    cx,cd=_consonant(cons,f0,1.0,seed)
+    # nguyen am
+    slide=1.0
+    if drift: slide=2**((drift*np.clip((t-dur*0.55)/max(dur*0.45,0.05),0,1))/12)
+    R=np.random.default_rng(2500+seed)
+    vf=(1+vibd*np.sin(2*np.pi*vib*t+seed)*np.minimum(1,t*2.6))*slide
+    vf*= (1+0.0018*np.sin(2*np.pi*0.7*t+seed*0.3))
+    ph=2*np.pi*np.cumsum(f0*vf)/SR
+    K=int(min(46,(SR/2.2)//max(f0,1)))
+    tilt={'croon':1.05,'deadpan':1.18,'shout':0.80,'whisper':1.6,'falsetto':1.45}[style]
+    src=sum(np.sin(ph*k)/(k**tilt) for k in range(1,K+1))*0.5
+    nz=R.standard_normal(L); src=src+_bp(nz,1200,6500,2)*br
+    out=np.zeros(L)
+    for fc,gg,bw in VOW[vow]:
+        out+=_bp(src,max(fc-bw,40),min(fc+bw,SR/2-100),2)*gg*14
+    if style=='shout':
+        out=np.tanh(out*2.2)*0.9+_bp(nz,2000,6000,2)*0.20
+    elif style=='whisper':
+        out=out*0.35+_bp(nz,700,7000,2)*0.55
+    # bao hinh: tan cong nhanh (co phu am -> nhu noi), buong nhanh
+    a={'croon':0.035,'deadpan':0.018,'shout':0.012,'whisper':0.03,'falsetto':0.045}[style]
+    e=env(L,a,0.14,{'croon':0.80,'deadpan':0.72,'shout':0.86,'whisper':0.7,'falsetto':0.8}[style],
+          min(0.16,dur*0.55+0.05))
+    out*=e
+    if len(cx)>4:
+        pre=t0-cd*0.82
+        put(b_,pre,cx,g*1.0)
+    put(b_,t0,out,g)
+def line(b_, b0, cells, g=0.17, style='croon', oct8=0.0, det=0.0, breath=0.24,
+         seedbase=0, jit=0.010, drag=0.006, Tf=None):
+    """cells = [(phach, dodai_phach, 'C4', nguyen_am, phu_am)]  hoac 4 phan tu."""
+    Tf=Tf or T
+    R=np.random.default_rng(3000+seedbase)
+    for i,c in enumerate(cells):
+        off,d,name,vow=c[0],c[1],c[2],c[3]
+        cons=c[4] if len(c)>4 else ''
+        drift=c[5] if len(c)>5 else 0.0
+        t0=Tf(b0+off)+drag+float(R.normal(0,jit))
+        dur=Tf(b0+off+d)-Tf(b0+off)
+        m=nn(name) if isinstance(name,str) else name
+        say(b_,t0,m,dur,vow,cons,g*float(max(0.4,1+R.normal(0,0.09))),style,breath,
+            seed=seedbase+i*7,det=det+float(R.normal(0,7)),drift=drift)
+        if oct8>0:
+            say(b_,t0+float(R.normal(0,0.008)),m+12,dur,vow,cons,g*oct8,
+                'falsetto' if style!='shout' else 'shout',breath*1.2,
+                seed=seedbase+i*7+511,det=det+float(R.normal(0,11)))
+def chant(b_, b0, cells, g=0.11, n=5, spread=18, style='shout', Tf=None, seedbase=0):
+    """Nhieu nguoi cung hat mot cau - dung cho chorus."""
+    Tf=Tf or T
+    R=np.random.default_rng(4000+seedbase)
+    for k in range(n):
+        for i,c in enumerate(cells):
+            off,d,name,vow=c[0],c[1],c[2],c[3]
+            cons=c[4] if len(c)>4 else ''
+            t0=Tf(b0+off)+float(R.normal(0,0.020))
+            dur=(Tf(b0+off+d)-Tf(b0+off))*float(1+R.normal(0,0.05))
+            m=(nn(name) if isinstance(name,str) else name)+(12 if k>=n-1 else 0)
+            say(b_,t0,m,dur,vow,cons,g/np.sqrt(n)*1.6,style,0.30,
+                seed=seedbase+k*97+i*7,det=float(R.normal(0,spread)))
+def shriek(b_,t0,m,dur,g=0.14,seed=0):
+    L=int(dur*SR)+int(0.2*SR); t=np.arange(L)/SR
+    R=np.random.default_rng(5000+seed)
+    f=hz(m)*(1+0.06*np.exp(-t*4))*(1+0.02*np.sin(2*np.pi*7.5*t))
+    ph=2*np.pi*np.cumsum(f)/SR
+    x=sum(np.sin(ph*k)/(k**0.72) for k in range(1,26))
+    x=np.tanh(x*4.0)
+    x+=_bp(R.standard_normal(L),1800,9000,2)*0.35
+    for fc,gg,bw in [(950,1.0,220),(2400,0.8,500),(3400,0.5,600)]:
+        x+=_bp(x,fc-bw,fc+bw,2)*gg*0.6
+    e=np.minimum(1,t*45)*np.exp(-t*1.4)
+    put(b_,t0,_fade(_bp(x,300,9000,2)*e),g)
+
+# ================================================================= MIX HELPERS
+def comp(x,thr,ratio,atk,rel):
+    e=np.abs(x); aA=np.exp(-1/(atk*SR)); aR=np.exp(-1/(rel*SR))
+    e=np.maximum(sg.lfilter([1-aR],[1,-aR],e),sg.lfilter([1-aA],[1,-aA],e))
+    g=np.ones_like(e); o=e>thr; g[o]=(thr+(e[o]-thr)/ratio)/np.maximum(e[o],1e-9)
+    bg,ag=sg.butter(2,70/(SR/2),'low'); return x*np.clip(sg.lfilter(bg,ag,g),0.06,1.0)
+def hp(x,f,o=2): b,a=sg.butter(o,f/(SR/2),'high'); return sg.lfilter(b,a,x)
+def lp(x,f,o=2): b,a=sg.butter(o,min(f,SR/2-100)/(SR/2),'low');  return sg.lfilter(b,a,x)
+def bp(x,lo,hi,o=2):
+    hi=min(hi,SR/2-100); b,a=sg.butter(o,[lo/(SR/2),hi/(SR/2)],'band'); return sg.lfilter(b,a,x)
+def rms_(x): return float(np.sqrt((np.asarray(x)**2).mean()+1e-18))
+
+def voxchain(vx):
+    V=hp(vx,150); V=comp(V,0.045,4.0,0.005,0.13); V=comp(V,0.085,3.2,0.001,0.05)
+    V=V+bp(V,1900,4300)*1.15+hp(V,7200)*0.55
+    V=hp(V,300); V=np.tanh(V*1.1)*2.9
+    return V
+
+def master(L,R,vocals=True,rms_target=0.175,boost=1.0):
+    st=np.stack([L,R])*boost
+    r=rms_(st)
+    if r>1e-9: st=st*(rms_target/r)          # gain staging THEO RMS truoc tanh (loi #13)
+    st=np.tanh(st*0.95); st=hp(st,26)
+    st/= (np.abs(st).max()+1e-9); st*=0.94
+    f=int(0.02*SR); st[:,:f]*=np.linspace(0,1,f)
+    fo=int(2.2*SR); st[:,-fo:]*=np.linspace(1,0,fo)**0.8
+    return st
+
+def widen(L,R,amt=1.6,fc=240):
+    M=(L+R)*0.5; S=hp((L-R)*0.5,fc)*amt
+    return M+S, M-S
+
+def report(st, V, REST, MAP, Tf=None):
+    Tf=Tf or T
+    lb=bp(V,300,4000); rb=bp(REST,300,4000); mono=st.mean(0)
+    print("  doan          thoi diem  giong/nhac  nang luong")
+    es=[]
+    for row in MAP:
+        nmv,b0,b1 = row[0],row[1],row[2]
+        sl=slice(int(Tf(b0)*SR),min(int(Tf(b1)*SR),st.shape[1]))
+        rr=20*np.log10(max(rms_(lb[sl]),1e-12)/max(rms_(rb[sl]),1e-12))
+        e=rms_(mono[sl]); es.append(e)
+        print(f"    {nmv:12s} {int(Tf(b0)//60)}:{Tf(b0)%60:04.1f} {rr:+6.1f}dB  {e:.4f} {'#'*int(e*90)}")
+    print(f"    -> dai dong: {max(es)/max(min(es),1e-9):.2f}x   peak {np.abs(st).max():.3f}  rms {rms_(st):.4f}")
+
+def deliver(st, name, vocals):
+    p=f"{name}.wav" if vocals else f"{name}-instrumental.wav"
+    write_wav(p, st.T.astype(np.float32))
+    print(f"  -> {p}  {st.shape[1]/SR:.1f}s")
+    return p
+
+# ================================================================= MIXDOWN CHUNG
+def _fit(x,n):
+    x=np.asarray(x,dtype=np.float64)
+    if len(x)<n: return np.concatenate([x,np.zeros(n-len(x))])
+    return x[:n]
+
+def _autobal(V, REST, MAP, n, Tf=None, default_target=2.5):
+    Tf=Tf or T
+    lb=bp(V,300,4000); rb=bp(REST,300,4000)
+    step=max(int(0.05*SR),1)
+    idx=np.arange(0,n,step); gc=np.ones(len(idx))
+    for row in MAP:
+        nm,b0,b1 = row[0],row[1],row[2]
+        tgt = row[3] if len(row)>3 else default_target
+        s=int(Tf(b0)*SR); e=min(int(Tf(b1)*SR),n)
+        if e<=s: continue
+        rv=rms_(lb[s:e]); rr=rms_(rb[s:e])
+        if rv<2e-5: continue
+        cur=20*np.log10(rv/max(rr,1e-12))
+        adj=float(np.clip(10**((tgt-cur)/20.0),0.45,3.2))
+        gc[(idx>=s)&(idx<e)]=adj
+    k=np.hanning(45); k/=k.sum()
+    gc=np.convolve(np.pad(gc,22,mode='edge'),k,mode='valid')
+    if len(gc)!=len(idx): gc=np.resize(gc,len(idx))
+    return np.interp(np.arange(n), idx, gc)
+
+def mixdown(name, vx, stems, drums, bass, MAP, vocals=True,
+            wet=0.22, decay=1.6, wide=1.5, drum_gain=0.72, bass_gain=0.85,
+            crush_amt=0.22, rms_target=0.175, vox_gain=1.0, boost_inst=1.10,
+            duck=0.32, Tf=None, tape=0.0, report_on=True):
+    """stems = [(buffer, pan(-1..1), gain, carve_amt, haas_ms), ...]"""
+    Tf=Tf or T
+    n=len(vx)
+    D0=_fit(drums,n); D0=D0/(np.abs(D0).max()+1e-9)*0.95
+    DR=comp(D0,0.16,3.0,0.004,0.10)*drum_gain
+    CRUSH=hp(np.tanh(D0*4.2),175)*crush_amt
+    BS=hp(comp(_fit(bass,n),0.10,3.0,0.01,0.12),50)*bass_gain
+    if vocals:
+        V=voxchain(vx)*vox_gain
+        ve=lp(np.abs(V),13); ve/= (np.percentile(ve,99.5)+1e-9)
+        duckV=np.clip(1-duck*np.clip(ve,0,1),1-duck-0.06,1.0)
+    else:
+        V=np.zeros(n); duckV=np.ones(n)
+    def carve(x,amt):
+        if amt<=0 or not vocals: return x*duckV
+        return (x-bp(x,1500,4000)*amt*(1-duckV)/duck)*duckV
+    WL=np.zeros(n); WR=np.zeros(n)
+    for st_ in stems:
+        b_,pan,g_,cv = st_[0],st_[1],st_[2],st_[3]
+        haas = st_[4] if len(st_)>4 else 0.0
+        x=carve(_fit(b_,n),cv)*g_
+        a=(pan+1)*0.25*np.pi
+        gl,gr=np.cos(a),np.sin(a)
+        if haas:
+            d=int(abs(haas)/1000*SR)
+            if haas>0: WL+=x*gl; WR+=np.roll(x,d)*gr
+            else:      WL+=np.roll(x,d)*gl; WR+=x*gr
+        else:
+            WL+=x*gl; WR+=x*gr
+    if tape>0:
+        WL=tapewarp(WL,tape,0.37,3); WR=tapewarp(WR,tape,0.41,9)
+    if vocals:
+        REST=np.zeros(n)
+        for st_ in stems: REST+=_fit(st_[0],n)*st_[2]
+        REST=REST+BS+DR+CRUSH
+        gv=_autobal(V,REST,MAP,n,Tf)
+        V=V*gv
+    L,R=reverb(WL,WR,decay,wet)
+    L,R=widen(L,R,wide)
+    CEN=V+BS+DR+CRUSH
+    L=L+CEN; R=R+CEN
+    st=master(L,R,vocals,rms_target,1.0 if vocals else boost_inst)
+    rail=int((np.abs(st)>0.985).sum())
+    print(f"\n[{name}{'' if vocals else ' / instrumental'}]  peak {np.abs(st).max():.3f} rms {rms_(st):.4f} rail {rail}")
+    if report_on and vocals:
+        REST2=np.zeros(n)
+        for st_ in stems: REST2+=_fit(st_[0],n)*st_[2]
+        report(st,V,REST2+BS+DR+CRUSH,MAP,Tf)
+    return st
+
+def run(name, build, MAP):
+    """build(vocals) -> st ; CLI: mac dinh render ca hai ban."""
+    a=sys.argv[1] if len(sys.argv)>1 else 'both'
+    if a in ('both','--vocals'):
+        deliver(build(True), name, True)
+    if a in ('both','--no-vocals'):
+        deliver(build(False), name, False)
+    print("DONE", name)
+
+# ================================================================= BAI 01
+# THIRTEEN DOORS  -  13/8, riff dong thanh, brass gat
+# Y tuong mot cau: mot canh cua bi ket - riff dai 13 phach nen moi vong no lai
+# lech di mot buoc, ca bai la no luc dong cua cho khop; chorus la luc cua bat ra.
+NAME="01-thirteen-doors"
+BAR=6.5                                   # 13/8
+SECS=[('INTRO',8),('V1',10),('PRE1',4),('CH1',8),('V2',10),('PRE2',4),
+      ('CH2',8),('BRIDGE',8),('CH3',12),('OUTRO',8),('TAG',6)]
+S={}; _b=0.0
+for _n,_c in SECS: S[_n]=_b; _b+=_c*BAR
+END=_b
+configure(140,141,END+2)
+MAP=[(n,S[n],S[n]+c*BAR) for n,c in SECS]
+print(NAME,"bars",int(END/BAR),"beats",END,"->",round(TOTAL,1),"s")
+
+gt=buf(); gt2=buf(); kbd=buf(); brs=buf(); vx=buf(); bs=buf(); fx=buf(); pad=buf()
+
+# ---------- RIFF 13/8 (F# phrygian), nhom 3+3+3+2+2 ----------
+ROOT=nn('F#3')
+RIFF=[(0.0,0),(0.5,0),(1.0,1),(1.5,0),(2.0,0),(2.5,3),(3.0,1),(3.5,0),(4.0,-2),
+      (4.5,7),(5.0,8),(5.5,0),(6.0,12)]
+ACC=set([0.0,1.5,3.0,4.5,5.5])
+def riff_bar(b0,g=0.105,oct_=0,seed=0,fuzz=True):
+    for off,iv in RIFF:
+        a=1.25 if off in ACC else 0.72
+        crunch(gt,T(b0+off),ROOT+iv+oct_,SPB(b0)*0.42,g*a,drive=7.2,seed=(seed+int(off*2))%7)
+        if fuzz: fuzzbass(bs,T(b0+off),ROOT+iv-24,SPB(b0)*0.40,0.30*a)
+
+# ---------- HOA AM chorus: mo ra sang ----------
+CH_CHORDS=[['A2','E4','A4','C#5'],['D3','F#4','A4','D5'],
+           ['B2','D4','F#4','B4'],['F#2','C#4','F#4','A4']]
+def chord_bar(b0,ch,g=0.075,seed=0):
+    ns=[nn(x) for x in ch]
+    for j,m in enumerate(ns[1:]):
+        for off in (0.0,1.5,3.0,4.5,5.5):
+            chime12(gt2,T(b0+off)+j*0.009,m,SPB(b0)*1.5,g*(1.0 if off in ACC else .7),seed=(seed+j)%5)
+    fingerbass(bs,T(b0),ns[0],SPB(b0)*1.4,0.30,gl=2)
+    fingerbass(bs,T(b0+1.5),ns[0],SPB(b0)*1.2,0.26)
+    fingerbass(bs,T(b0+3.0),ns[0]+7,SPB(b0)*1.2,0.24)
+    fingerbass(bs,T(b0+4.5),ns[0],SPB(b0)*0.9,0.26)
+    fingerbass(bs,T(b0+5.5),ns[0]+12,SPB(b0)*0.9,0.22)
+    gospelorgan(kbd,T(b0),ns[1:],T(b0+BAR*0.94)-T(b0),0.050)
+
+# ---------- CLAVINET doi hook ----------
+def clav_hook(b0,g=0.085):
+    for off,iv in [(0,0),(0.5,3),(1.0,5),(2.0,7),(2.5,5),(3.0,3),(4.5,7),(5.5,10)]:
+        clav(kbd,T(b0+off),nn('F#4')+iv,SPB(b0)*0.45,g,seed=int(off*2)%5)
+
+# ---------- KEN TROMBONE gat ----------
+def brass_stab(b0,g=0.085,notes=('F#3','A3','C#4')):
+    for off in (0.0,3.0,5.5):
+        for j,x in enumerate(notes):
+            bone(brs,T(b0+off)+j*0.012,nn(x),SPB(b0)*0.55,g,det=(-8+7*j),growl=0.55,seed=j)
+
+# ================= TRONG: math-rock, khong hat deu =================
+K=Kit(seed=131); P=Performer(K,T,SPB,TOTAL,seed=17,style='indie')
+GRP=[0.0,1.5,3.0,4.5,5.5]                   # moc nhom
+def dr_bar(b0,lvl=1.0,hats=True,ghost=True,ride=False,arc=1.0):
+    for i,off in enumerate(GRP):
+        P.K(b0+off,int(off*4)%16,(1.0 if i in(0,2,3) else 0.72)*lvl,arc,tune=46)
+    P.S(b0+1.5,6,0.92*lvl,'center',arc); P.S(b0+4.5,2,0.88*lvl,'center',arc)
+    if ghost:
+        for gp in (2.25,3.75,6.25): P.S(b0+gp,int(gp*4)%16,0.42*lvl,'ghost',arc)
+    if hats:
+        p=0.0
+        while p<BAR-1e-6:
+            op=(abs(p-5.0)<1e-6)
+            P.H(b0+p,int(p*4)%16,(0.85 if p in ACC else 0.48)*lvl,
+                o=0.55 if op else 0.0,art='edge' if p in ACC else 'tip',arc=arc,
+                choke_beat=(b0+5.5) if op else None)
+            p+=0.5
+    if ride:
+        for p in (0.0,1.5,3.0,4.5,5.5): P.RD(b0+p,int(p*4)%16,0.5*lvl,bell=(p==0),arc=arc)
+
+def bar_at(sec,i): return S[sec]+i*BAR
+
+# INTRO: chi trong + riff dan vao
+for i in range(8):
+    b=bar_at('INTRO',i); a=[1.0,0.95,1.0,1.03][i%4]
+    if i>=2:
+        for off in GRP[:3 if i<4 else 5]: P.K(b+off,int(off*4)%16,0.8,a,tune=46)
+    if i>=4: P.S(b+1.5,6,0.7,'cross',a); P.S(b+4.5,2,0.7,'cross',a)
+    if i>=6:
+        p=0.0
+        while p<BAR-1e-6: P.WD(b+p,int(p*4)%16,0.42,tune=1100 if p in ACC else 780); p+=0.5
+    if i==7: P.fill(b+5.0,1.5,'trib',0.85,next_crash_beat=S['V1'])
+for i in range(10):
+    b=bar_at('V1',i); a=[1.0,0.96,1.0,1.02][i%4]
+    dr_bar(b,0.92,hats=True,ghost=(i%2==1),arc=a)
+    if i==9: P.fill(b+4.5,2.0,'stutter',0.9,next_crash_beat=S['PRE1'])
+for i in range(4):
+    b=bar_at('PRE1',i); a=1.0+0.04*i
+    dr_bar(b,1.0+0.05*i,hats=True,ghost=True,arc=a)
+    for p in np.arange(0,BAR,0.25): P.TB(b+float(p),int(p*4)%16,0.34+0.05*i,a)
+    if i==3: P.fill(b+4.5,2.0,'roll',1.05,next_crash_beat=S['CH1'])
+def ch_drums(sec,nb,lvl=1.0,brk=False):
+    for i in range(nb):
+        b=bar_at(sec,i); a=[1.0,0.97,1.01,1.03][i%4]
+        for off in GRP: P.K(b+off,int(off*4)%16,(1.05 if off in(0.0,3.0,5.5) else 0.8)*lvl,a,tune=47)
+        P.K(b+2.0,8,0.62*lvl,a); P.S(b+1.5,6,1.0*lvl,'center',a); P.S(b+4.5,2,1.0*lvl,'center',a)
+        P.CL(b+1.5+0.005,6,0.8*lvl,a); P.CL(b+4.5+0.005,2,0.8*lvl,a)
+        p=0.0
+        while p<BAR-1e-6:
+            P.H(b+p,int(p*4)%16,(0.9 if p in ACC else 0.52)*lvl,o=0.0,art='edge' if p in ACC else 'tip',arc=a); p+=0.5
+        for pp in np.arange(0,BAR,0.5): P.TB(b+float(pp),int(pp*4)%16,0.42*lvl,a)
+        if brk and i%2==1:
+            P.S(b+6.0,8,0.85*lvl,'ghost',a); P.S(b+6.25,9,0.9*lvl,'center',a)
+        if i%4==0: P.CR(b,0,0.85*lvl,size=1.05)
+        if i==nb-1: P.fill(b+4.5,2.0,'tom',1.0*lvl)
+ch_drums('CH1',8,1.0)
+for i in range(10):
+    b=bar_at('V2',i); a=[1.0,0.96,1.0,1.02][i%4]
+    dr_bar(b,0.95,hats=(i>=2),ghost=True,ride=(i<2),arc=a)
+    for p in np.arange(0,BAR,0.5): P.SH(b+float(p),int(p*4)%16,0.3,a)
+    if i==9: P.fill(b+4.5,2.0,'stutter',0.95,next_crash_beat=S['PRE2'])
+for i in range(4):
+    b=bar_at('PRE2',i); a=1.0+0.04*i
+    dr_bar(b,1.05+0.05*i,hats=True,ghost=True,arc=a)
+    for p in np.arange(0,BAR,0.25): P.TB(b+float(p),int(p*4)%16,0.4+0.05*i,a)
+    if i==3:                                   # FILL AM: bo trong 1 phach cuoi
+        P.fill(b+3.0,1.5,'roll',1.1); P.CR(S['CH2'],0,0.9); P.K(S['CH2'],0,1.05)
+ch_drums('CH2',8,1.05,brk=True)
+# BRIDGE: half-time, tom, khong hat
+for i in range(8):
+    b=bar_at('BRIDGE',i); a=[1.0,0.98,1.0,1.02][i%4]
+    P.K(b,0,0.85,a,tune=44); P.K(b+3.0,12,0.7,a,tune=44)
+    P.S(b+1.5,6,0.6,'rim',a); P.S(b+5.0,4,0.55,'rim',a)
+    for p in (0.0,1.0,2.0,3.0,4.0,5.0,6.0):
+        P.CG(b+p,int(p*4)%16,0.45 if p%2 else 0.62,tune=205 if p%2 else 150,
+             art='slap' if p in (1.0,5.0) else 'open',arc=a)
+    if i>=4:
+        for p in (0.0,1.5,3.0,4.5,5.5): P.RD(b+p,int(p*4)%16,0.42,bell=(p==0),arc=a)
+    if i==7: P.fill(b+4.5,2.0,'tom',1.1,next_crash_beat=S['CH3'])
+ch_drums('CH3',12,1.12,brk=True)
+for i in range(8):
+    b=bar_at('OUTRO',i); a=[1.0,0.97,1.0,1.02][i%4]; lv=max(0.5,1.0-0.06*i)
+    dr_bar(b,lv,hats=(i<5),ghost=True,ride=(i>=5),arc=a)
+    if i==0: P.CR(b,0,0.8)
+for i in range(6):
+    b=bar_at('TAG',i); lv=max(0.25,0.6-0.09*i)
+    for off in GRP[:3]: P.K(b+off,int(off*4)%16,lv)
+    P.S(b+1.5,6,lv*0.8,'cross')
+P.apply_chokes()
+DRUMS=mix_kit(P.bus,room_amount=0.24,oh_amount=0.92,lofi=0.0,lpf=9800)
+
+# ================= SAP XEP =================
+noise_sw(fx,0,T(END),0.008,True,60,1200)
+for i in range(8):
+    b=bar_at('INTRO',i)
+    if i>=1: riff_bar(b,g=0.05+0.012*i,fuzz=(i>=4),seed=i)
+    if i>=4: saw_drone(pad,T(b),nn('F#2'),T(b+BAR)-T(b),0.045)
+for i in range(10):
+    b=bar_at('V1',i); riff_bar(b,0.10,seed=i)
+    if i>=4: saw_drone(pad,T(b),nn('C#3'),T(b+BAR)-T(b),0.030)
+    if i%2==1: brass_stab(b,0.05)
+for i in range(4):
+    b=bar_at('PRE1',i); riff_bar(b,0.11+0.01*i,seed=i)
+    clav_hook(b,0.06+0.012*i)
+for i in range(8):
+    b=bar_at('CH1',i); chord_bar(b,CH_CHORDS[i%4],0.078,seed=i)
+    clav_hook(b,0.075); brass_stab(b,0.075,('A3','C#4','E4') if i%2==0 else ('D3','F#3','A3'))
+for i in range(10):
+    b=bar_at('V2',i); riff_bar(b,0.105,seed=i+3)
+    clav_hook(b,0.045)
+    if i>=5: saw_drone(pad,T(b),nn('A2'),T(b+BAR)-T(b),0.032)
+for i in range(4):
+    b=bar_at('PRE2',i); riff_bar(b,0.115+0.01*i,seed=i); clav_hook(b,0.075+0.01*i)
+    brass_stab(b,0.06+0.012*i)
+for i in range(8):
+    b=bar_at('CH2',i); chord_bar(b,CH_CHORDS[i%4],0.085,seed=i+2)
+    clav_hook(b,0.08); brass_stab(b,0.085,('A3','C#4','E4') if i%2==0 else ('D3','F#3','A3'))
+# BRIDGE: hop xuong ken + drone, riff bien mat
+BR_CH=[['D3','A3','D4','F#4'],['C#3','G#3','C#4','E4'],
+       ['B2','F#3','B3','D4'],['A2','E3','A3','C#4']]
+for i in range(8):
+    b=bar_at('BRIDGE',i); ch=BR_CH[i%4]; ns=[nn(x) for x in ch]
+    for j,m in enumerate(ns[1:]):
+        bone(brs,T(b)+j*0.03,m,T(b+BAR*0.9)-T(b),0.070,det=(-9+8*j),growl=0.30,seed=j)
+    saw_drone(pad,T(b),ns[0],T(b+BAR)-T(b),0.055)
+    subbass(bs,T(b),ns[0]-12,T(b+BAR*0.95)-T(b),0.24)
+    for off in (0.0,2.0,4.0,5.5):
+        marimba(kbd,T(b+off),ns[1+int(off)%3]+12,SPB(b)*1.2,0.055,metal=True,seed=i)
+for i in range(12):
+    b=bar_at('CH3',i); chord_bar(b,CH_CHORDS[i%4],0.095,seed=i+5)
+    clav_hook(b,0.09); brass_stab(b,0.095,('A3','C#4','E4') if i%2==0 else ('D3','F#3','A3'))
+    if i>=6: riff_bar(b,0.075,oct_=12,seed=i,fuzz=False)
+for i in range(8):
+    b=bar_at('OUTRO',i); riff_bar(b,0.10-0.006*i,seed=i)
+    if i<4: chord_bar(b,CH_CHORDS[i%4],0.05,seed=i)
+    clav_hook(b,0.05)
+for i in range(6):
+    b=bar_at('TAG',i); g=0.075-0.011*i
+    riff_bar(b,g,seed=i,fuzz=(i<3))
+    saw_drone(pad,T(b),nn('F#2'),T(b+BAR)-T(b),0.04-0.005*i)
+
+# ================= GIONG HAT =================
+V_CELLS=[(0,.5,'F#4','a','d'),(.5,.5,'F#4','o','n'),(1,.5,'G4','e','t'),
+         (1.5,.5,'F#4','a','l'),(2,.5,'F#4','u','w'),(2.5,.5,'E4','o','m'),
+         (3,.5,'F#4','a','d'),(3.5,.5,'F#4','i','s'),(4,.5,'G4','a','k'),
+         (4.5,.5,'C#5','a','n'),(5,.5,'B4','o','t'),(5.5,1.0,'A4','a','y')]
+V_CELLS2=[(0,.5,'F#4','o','b'),(.5,.5,'A4','a','r'),(1,.5,'F#4','e','th'),
+          (1.5,.5,'E4','o','l'),(2,.5,'F#4','a','d'),(2.5,.5,'G4','i','sh'),
+          (3,.5,'F#4','a','n'),(3.5,.5,'F#4','o','w'),(4,1.0,'E4','u','m'),
+          (5,.5,'F#4','a','d'),(5.5,1.0,'F#4','o','h')]
+CH_HOOK=[(0,.5,'A4','o','d'),(.5,.5,'A4','u','w'),(1,.5,'C#5','a','n'),
+         (1.5,.5,'B4','o','t'),(2,.5,'A4','a','d'),(2.5,1.0,'F#4','o','l'),
+         (4.5,.5,'A4','a','d'),(5,.5,'B4','o','m'),(5.5,1.0,'A4','a','y')]
+PRE_CELLS=[(0,.5,'C#5','a','g'),(.5,.5,'B4','o','n'),(1,1.0,'A4','a','r'),
+           (2,.5,'B4','o','d'),(2.5,.5,'C#5','a','sh'),(3,1.0,'D5','a','l'),
+           (4.5,.5,'C#5','o','t'),(5,.5,'B4','a','m'),(5.5,1.0,'C#5','a','y')]
+for i in range(10):
+    b=bar_at('V1',i)
+    line(vx,b,V_CELLS if i%2==0 else V_CELLS2,g=0.19,style='deadpan',breath=0.30,seedbase=i*11)
+for i in range(4):
+    b=bar_at('PRE1',i)
+    line(vx,b,PRE_CELLS,g=0.20+0.01*i,style='croon',breath=0.24,seedbase=100+i*11)
+for i in range(8):
+    b=bar_at('CH1',i)
+    line(vx,b,CH_HOOK,g=0.21,style='croon',oct8=0.40,breath=0.20,seedbase=200+i*11)
+    if i%2==1: chant(vx,b,CH_HOOK,g=0.10,n=4,spread=16,style='shout',seedbase=300+i)
+for i in range(10):
+    b=bar_at('V2',i)
+    line(vx,b,V_CELLS2 if i%2==0 else V_CELLS,g=0.19,style='deadpan',breath=0.28,seedbase=400+i*11)
+for i in range(4):
+    b=bar_at('PRE2',i)
+    line(vx,b,PRE_CELLS,g=0.21+0.01*i,style='croon',breath=0.22,seedbase=500+i*11)
+    chant(vx,b,PRE_CELLS,g=0.07,n=3,spread=14,style='croon',seedbase=550+i)
+for i in range(8):
+    b=bar_at('CH2',i)
+    line(vx,b,CH_HOOK,g=0.21,style='croon',oct8=0.44,breath=0.18,seedbase=600+i*11)
+    chant(vx,b,CH_HOOK,g=0.11,n=5,spread=18,style='shout',seedbase=700+i)
+BR_MEL=[(0,1.5,'D5','a','m'),(1.5,1.5,'C#5','o','n'),(3,1.5,'A4','a','l'),
+        (4.5,2.0,'D5','a','w')]
+for i in range(8):
+    b=bar_at('BRIDGE',i)
+    line(vx,b,BR_MEL,g=0.17+0.006*i,style='croon',breath=0.30,seedbase=800+i*11)
+    if i==7: shriek(vx,T(b+5.0),nn('A5'),0.9,0.10)
+for i in range(12):
+    b=bar_at('CH3',i)
+    chant(vx,b,CH_HOOK,g=0.15,n=6,spread=20,style='shout',seedbase=900+i*11)
+    line(vx,b,CH_HOOK,g=0.15,style='croon',oct8=0.30,breath=0.16,seedbase=950+i*11)
+for i in range(8):
+    b=bar_at('OUTRO',i)
+    line(vx,b,CH_HOOK[:6],g=0.18-0.012*i,style='deadpan',breath=0.28,seedbase=1000+i*11)
+for i in range(4):
+    b=bar_at('TAG',i)
+    line(vx,b,[(0,.5,'F#4','a','d'),(.5,.5,'F#4','o','n'),(1,1.0,'F#4','a','y')],
+         g=0.14-0.028*i,style='whisper',breath=0.32,seedbase=1100+i*11)
+
+# ================= MIX =================
+STEMS=[(gt,-0.55,0.62,0.45,0.0),(gt2,0.55,0.60,0.45,7.0),(kbd,0.30,0.55,0.50,0.0),
+       (brs,-0.30,0.58,0.50,0.0),(pad,0.0,0.50,0.55,0.0),(fx,0.0,1.0,0.0,0.0)]
+MAPT=[(n,a,b_,(6.0 if n in('BRIDGE','TAG') else 2.6)) for n,a,b_ in MAP]
+run(NAME, lambda voc: mixdown(NAME,vx,STEMS,DRUMS,bs,MAPT,vocals=voc,
+    wet=0.20,decay=1.45,wide=1.35,drum_gain=0.74,bass_gain=0.88,crush_amt=0.24,
+    rms_target=0.176), MAPT)
