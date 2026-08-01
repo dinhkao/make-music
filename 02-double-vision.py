@@ -1141,6 +1141,16 @@ def harp_arp(b0,ts,g=0.05,seed=0):
     for k,off in enumerate(np.arange(0,4,0.5)):
         m=ts[p[k%8]]+12
         harp(hp_,T(b0+float(off)),m,T(b0+float(off)+1.5)-T(b0+float(off)),g,seed=k+seed*8)
+# ---------- jangle riff (indie hook: 8th-note earworm, offbeat) ----------
+def riff(b0,ts,g=0.10,seed=0,bus=kbd):
+    p=[0,1,2,1,0,2,1,2]
+    for k,off in enumerate(np.arange(0,4,0.5)):
+        jangle(bus,T(b0+float(off)),ts[p[k%8]]+12,0.44,g,seed=k+seed*7)
+# ---------- crunch rhythm guitar offbeat (Strokes-style chug) ----------
+def chug(b0,ts,g=0.055,seed=0):
+    for off in (0.5,1.5,2.5,3.5):
+        crunch(kbd,T(b0+off),ts[0]+12,0.35,g,seed=seed*5+int(off*2))
+    crunch(kbd,T(b0+3.5),ts[0]+12,0.75,g*1.35,seed=seed*5+7)
 
 # ---------- stabs kep (wurli, "intense stabs interspersed") ----------
 def stab(b0,ts,g=0.055):
@@ -1269,20 +1279,19 @@ for i in range(8):
     b=bar_at('INTRO',i); ch=V1CH[i%8]; root,ts=CH[ch]
     harp(hp_,T(b),GLIDE[i],3.5,0.065,seed=i)          # nhip long tenh xuong
     harp_arp(b,ts,0.045,seed=i)
-    supersaw(pad,T(b),[root+12]+[t+12 for t in ts[:2]]+[63],2.0,0.035,
-             atk=0.9,seed=i,pump_=0.0)
+    if i>=4: riff(b,ts,0.095,seed=i)                  # hook jangle dan len
     if i>=4: wurli(kbd,T(b+2),ts[1]+12,1.2,0.040)
 for i in range(16):
     b=bar_at('V1',i); ch=V1CH[i%8]; root,ts=CH[ch]; a=[1.0,0.97,1.0,1.02][i%4]
     popbass(bs,T(b),root,2.0,0.30); popbass(bs,T(b+1.5),root+12,1.2,0.22)
     popbass(bs,T(b+2.5),root+7,1.2,0.24); popbass(bs,T(b+3.5),root,1.0,0.26)
-    supersaw(pad,T(b),[root+12,ts[1]+12,ts[2]+12],2.0,0.030,atk=0.5,seed=i)
+    if i%2==0: riff(b,ts,0.075,seed=i)
     stab(b,ts,0.050)
     if ch=='Dbmaj7': harp_arp(b,ts,0.040,seed=i)
 for i in range(4):
     b=bar_at('INSTR',i); ch=['Db','Fm','Db','Fm'][i]; root,ts=CH[ch]
     popbass(bs,T(b),root,2.0,0.32); popbass(bs,T(b+2),root+7,2.0,0.28)
-    supersaw(pad,T(b),[root+12]+[t+12 for t in ts],2.0,0.055,atk=0.15,seed=i)
+    riff(b,ts,0.12,seed=i)                            # riff dan hat o break
     for off in (0.0,2.0):
         bone(brs,T(b+off),ts[0]+12,T(b+off+0.6)-T(b+off),0.075,growl=0.5)
         horn(brs,T(b+off+0.5),ts[-1]+12,T(b+off+1.0)-T(b+off+0.5),0.055,rough=1.2)
@@ -1292,22 +1301,23 @@ for i in range(16):
     for off,iv,vv in [(0,0,1.0),(0.5,0,0.55),(1,12,0.7),(1.5,0,0.5),
                       (2,7,0.75),(2.5,0,0.5),(3,0,0.6),(3.5,12,0.6)]:
         popbass(bs,T(b+off),root+iv,0.7,0.26*vv)
-    supersaw(pad,T(b),[root+12,ts[1]+12,ts[2]+12],2.0,0.045,atk=0.35,seed=i,
-             pump_=1.0)
+    if i%2==0: riff(b,ts,0.07,seed=i)
     stab(b,ts,0.055)
     harp_arp(b,ts,0.035,seed=i)
     if ch in ('Bbm7','Ab'):
         for off in (1.0,3.0): clav(kbd,T(b+off),ts[1]+12,0.5,0.05,seed=i)
 for i in range(12):
     b=bar_at('CH1',i); ch=CH1CH[i]; root,ts=CH[ch]
-    for off,iv,vv in [(0,0,1.0),(0.5,12,0.6),(1,0,0.7),(1.5,7,0.55),
-                      (2,0,0.8),(2.5,0,0.5),(3,12,0.65),(3.5,0,0.6)]:
-        popbass(bs,T(b+off),root+iv,0.6,0.28*vv)
-    supersaw(pad,T(b),[root+12,ts[0]+12,ts[1]+12,ts[2]+12],2.0,0.065,atk=0.12,
-             seed=i,pump_=2.0)
-    harp_arp(b,ts,0.045,seed=i)
-    gospelorgan(kbd,T(b),ts,2.0,0.038)
-    for off in (0.0,2.0): horn(brs,T(b+off),ts[1]+12,0.7,0.05,rough=1.2)
+    for off,iv,vv in [(0,0,1.0),(0.5,0,0.8),(1,12,0.65),(1.5,0,0.6),
+                      (2,0,0.85),(2.5,0,0.6),(3,12,0.7),(3.5,0,0.6)]:
+        fuzzbass(bs,T(b+off),root+iv,0.55,0.17*vv)
+    supersaw(pad,T(b),[root+12,ts[0]+12,ts[1]+12,ts[2]+12],2.0,0.040,atk=0.12,
+             seed=i,pump_=0.0)
+    riff(b,ts,0.085,seed=i)
+    chug(b,ts,0.055,seed=i)
+    harp_arp(b,ts,0.040,seed=i)
+    gospelorgan(kbd,T(b),ts,2.0,0.032)
+    for off in (0.0,2.0): horn(brs,T(b+off),ts[1]+12,0.7,0.045,rough=1.2)
 for i in range(4):
     b=bar_at('POST',i)
     popbass(bs,T(b),37,1.5,0.22); popbass(bs,T(b+2.5),49,1.0,0.20)
@@ -1316,27 +1326,29 @@ for i in range(12):
     b=bar_at('V3',i); ch=V3CH[i]; root,ts=CH[ch]
     for off,iv,vv in [(0,0,1.0),(1.5,0,0.6),(2.5,7,0.7),(3.5,0,0.6)]:
         popbass(bs,T(b+off),root+iv,1.2,0.27*vv)
-    supersaw(pad,T(b),[root+12,ts[1]+12,ts[2]+12],2.0,0.045,atk=0.2,seed=i)
+    if i%2==0: riff(b,ts,0.065,seed=i)
     stab(b,ts,0.052)
     if ch=='Dbm':
         saw_drone(pad,T(b),root+12,2.0,0.05)            # toi lai
         siren(fx,T(b),nn('Ab4'),nn('C5'),3.0,0.028)
 for i in range(12):
     b=bar_at('CH2',i); ch=CH2CH[i]; root,ts=CH[ch]
-    for off,iv,vv in [(0,0,1.0),(0.5,12,0.6),(1,0,0.7),(1.5,7,0.55),
-                      (2,0,0.8),(2.5,0,0.5),(3,12,0.65),(3.5,0,0.6)]:
-        popbass(bs,T(b+off),root+iv,0.6,0.29*vv)
-    supersaw(pad,T(b),[root+12,ts[0]+12,ts[1]+12,ts[2]+12],2.0,0.075,atk=0.10,
-             seed=i,pump_=2.0)
-    harp_arp(b,ts,0.05,seed=i)
-    gospelorgan(kbd,T(b),ts,2.0,0.045)
+    for off,iv,vv in [(0,0,1.0),(0.5,0,0.85),(1,12,0.7),(1.5,0,0.6),
+                      (2,0,0.9),(2.5,0,0.6),(3,12,0.75),(3.5,0,0.6)]:
+        fuzzbass(bs,T(b+off),root+iv,0.55,0.18*vv)
+    supersaw(pad,T(b),[root+12,ts[0]+12,ts[1]+12,ts[2]+12],2.0,0.045,atk=0.10,
+             seed=i,pump_=0.0)
+    riff(b,ts,0.09,seed=i)
+    chug(b,ts,0.06,seed=i)
+    harp_arp(b,ts,0.045,seed=i)
+    gospelorgan(kbd,T(b),ts,2.0,0.038)
     for off in (0.0,2.0):
-        horn(brs,T(b+off),ts[1]+12,0.7,0.055,rough=1.3)
+        horn(brs,T(b+off),ts[1]+12,0.7,0.05,rough=1.3)
         bone(brs,T(b+off+0.5),ts[0]+12,T(b+off+1.0)-T(b+off+0.5),0.05,growl=0.4)
 for i in range(12):
     b=bar_at('BRIDGE',i); root,ts=CH['Db']
-    supersaw(pad,T(b),[49,53,58,63],2.0,0.050 if i<8 else 0.065,
-             atk=1.5 if i<8 else 0.6,seed=i,pump_=0.5)
+    supersaw(pad,T(b),[49,53,58,63],2.0,0.038 if i<8 else 0.050,
+             atk=1.5 if i<8 else 0.6,seed=i,pump_=0.0)
     mellotron(kbd,T(b),49,2.0,0.045,kind='choir',seed=i)
     bone(brs,T(b),49,T(b+2.0)-T(b),0.050,growl=0.2)
     subbass(bs,T(b),37,T(b+2.0)-T(b),0.26)
@@ -1345,19 +1357,20 @@ for i in range(16):
     b=bar_at('OUTRO',i); ch=OUTCH[i]; root,ts=CH[ch]
     subbass(bs,T(b),root,T(b+2.0)-T(b),0.26)
     fuzzbass(bs,T(b),root+12,T(b+1.5)-T(b),0.13)
-    supersaw(pad,T(b),[root+12]+[t+12 for t in ts],2.0,0.085,atk=0.05,seed=i,
-             pump_=2.0)
+    supersaw(pad,T(b),[root+12]+[t+12 for t in ts],2.0,0.050,atk=0.05,seed=i,
+             pump_=0.0)
+    if i%2==0: riff(b,ts,0.10,seed=i)
     siren(fx,T(b),nn('Ab4'),nn('C5'),3.0,0.055 if i%4 in (0,2) else 0.025)
     if i%2==0: bone(brs,T(b),ts[0],1.6,0.05,growl=0.7)
 for i in range(4):
     b=bar_at('TAIL',i); ch=TAGCH[i]; root,ts=CH[ch]
     siren(fx,T(b),nn('Db4'),nn('Db5'),3.0,0.030*(1-i/4))
-    supersaw(pad,T(b),[root+12]+[t+12 for t in ts],2.0,0.025*(1-i/4),atk=1.0,seed=i)
+    supersaw(pad,T(b),[root+12]+[t+12 for t in ts],2.0,0.015*(1-i/4),atk=1.0,seed=i)
 
 # ================= GIONG HAT =================
 V1A=[
- # "i turn the light on, see two halls"
- [(0,.5,'F4','a',''),(0.5,.5,'F4','u','t'),(1,.5,'Ab4','e','l'),(1.5,.5,'Ab4','a','l'),
+ # "i turn the light on, see two halls" (syncopated opening)
+ [(0,.75,'F4','a',''),(0.75,.25,'F4','u','t'),(1,.5,'Ab4','e','l'),(1.5,.5,'Ab4','a','l'),
   (2,.5,'F4','a','s'),(2.5,.5,'F4','i','s'),(3,.5,'Ab4','u','t'),(3.5,.5,'Gb4','o','h')],
  # "two doors that look the same to me"
  [(0,.5,'F4','u','t'),(0.5,.5,'Ab4','o','d'),(1,.5,'Gb4','e','z'),(1.5,.5,'F4','u','l'),
@@ -1381,15 +1394,20 @@ V1A=[
  [(0,.5,'Ab4','a',''),(0.5,.5,'F4','u','l'),(1,.5,'Gb4','e','z'),(1.5,.5,'Ab4','o','d'),
   (2,.5,'F4','a',''),(2.5,.5,'Ab4','a','f'),(3,.5,'Gb4','e','z'),(3.5,.5,'F4','u','v')],
 ]
-# CHORUS HOOK: "i see double, two doors, same key / ... every door is me / ... i can't get out"
-P1=[(0,.5,'A4','a',''),(0.5,.5,'A4','i','s'),(1,.5,'Bb4','a','d'),(1.5,.5,'A4','e','b'),
-    (2,.5,'Bb4','u','t'),(2.5,.5,'A4','o','d'),(3,.5,'Db5','e','s'),(3.5,.5,'Bb4','i','k')]
-P2=[(0,.5,'A4','a',''),(0.5,.5,'A4','i','s'),(1,.5,'Bb4','a','d'),(1.5,.5,'A4','e','b'),
-    (2,.5,'Bb4','e',''),(2.5,.5,'A4','e','v'),(3,.5,'Db5','o','d'),(3.5,.5,'Bb4','i','m')]
-P3=[(0,.5,'A4','a',''),(0.5,.5,'A4','i','s'),(1,.5,'Bb4','a','d'),(1.5,.5,'A4','e','b'),
-    (2,.5,'Bb4','a',''),(2.5,.5,'A4','a','k'),(3,.5,'Bb4','e','g'),(3.5,1.0,'Db5','u','t')]
+# CHORUS HOOK: "i see double, two doors, same key / ev'ry door is me / i can't get out"
+# syncopated: vao muon sau rest, nhanh-slow nhanh-slow, cuoi phrase giu dai + nhay cao
+P1=[(0.5,.75,'A4','a',''),(1.25,.25,'A4','i','s'),(1.5,.5,'Bb4','a','d'),
+    (2,.25,'Bb4','e','b'),(2.25,.25,'A4','u','t'),(2.5,.5,'A4','o','d'),
+    (3,.5,'Db5','e','s'),(3.5,.75,'Bb4','i','k')]
+P2=[(0.5,.75,'A4','a',''),(1.25,.25,'A4','i','s'),(1.5,.5,'Bb4','a','d'),
+    (2,.25,'Bb4','e','b'),(2.25,.25,'A4','e','v'),(2.5,.5,'A4','i','r'),
+    (3,.5,'Db5','o','d'),(3.5,.75,'Bb4','i','m')]
+P3=[(0.5,.75,'A4','a',''),(1.25,.25,'A4','i','s'),(1.5,.5,'Bb4','a','d'),
+    (2,.25,'Bb4','e','b'),(2.25,.25,'A4','a',''),(2.5,.5,'A4','a','k'),
+    (3,.5,'Bb4','e','g'),(3.5,.75,'Db5','a','t')]
 CHP=[P1,P2,P3]
-LE_ME=[(0,.5,'Db4','e','l'),(0.5,.5,'Db4','e','m'),(1.5,1.0,'Db4','o','')]
+LE_ME=[(0,.5,'Db4','e','l'),(0.5,.25,'Db4','e','t'),(0.75,.25,'Db4','i','m'),
+       (1.0,.5,'Db4','a','t'),(1.5,1.0,'Db4','a','')]
 # V3: fractured, roi toi lai
 V3A=[
  [(0,.5,'F4','a',''),(0.5,.5,'Ab4','i','s'),(1,.5,'Gb4','e','z'),(1.5,.5,'F4','o','w'),
@@ -1424,10 +1442,10 @@ for i in range(16):
 for i in range(12):
     b=bar_at('CH1',i); ph=CHP[i//4]
     line(vx,b,ph,g=0.21,style='croon',oct8=0.35,breath=0.20,seedbase=600+i*13)
-    if i%2==1: chant(vx,b,ph,g=0.10,n=4,spread=14,style='shout',seedbase=700+i)
+    if i%2==1: chant(vx,b,ph,g=0.15,n=6,spread=18,style='shout',seedbase=700+i)
 for i in range(4):
     b=bar_at('POST',i)
-    chant(vx,b,LE_ME,g=0.13,n=6,spread=12,style='shout',seedbase=800+i)
+    chant(vx,b,LE_ME,g=0.16,n=8,spread=14,style='shout',seedbase=800+i)
 for i in range(12):
     b=bar_at('V3',i)
     ph=V3A[i//2]
@@ -1435,7 +1453,7 @@ for i in range(12):
 for i in range(12):
     b=bar_at('CH2',i); ph=CHP[i//4]
     line(vx,b,ph,g=0.21,style='croon',oct8=0.40,breath=0.18,seedbase=1100+i*13)
-    if i%2==0: chant(vx,b,ph,g=0.11,n=5,spread=16,style='shout',seedbase=1200+i)
+    if i%2==0: chant(vx,b,ph,g=0.16,n=6,spread=18,style='shout',seedbase=1200+i)
 for i in range(12):
     b=bar_at('BRIDGE',i)
     ph=[BR1,BR2,BR3][i//4]
@@ -1463,7 +1481,7 @@ MAPT=[(n,a,b_,(5.0 if n in('POST','TAIL') else 6.0 if n=='BRIDGE' else
       for n,a,b_ in MAP]
 def _build(voc):
     st=mixdown(NAME,vx,STEMS,DRUMS,bs,MAPT,vocals=voc,
-        wet=0.24,decay=1.5,wide=1.5,drum_gain=0.78,bass_gain=0.90,crush_amt=0.20,
+        wet=0.24,decay=1.5,wide=1.5,drum_gain=0.78,bass_gain=0.90,crush_amt=0.24,
         rms_target=0.176,vox_gain=1.0,boost_inst=1.12,duck=0.30,tape=0.003)
     return hard_cut(st,CUT)
 run(NAME,_build,MAPT)
