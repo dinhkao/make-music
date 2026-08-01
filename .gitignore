@@ -1,3 +1,15 @@
 __pycache__/
 *.pyc
 
+
+# ban render trung gian cua album 04-13 (698MB) - tao lai bang: python3 <bai>.py
+04-plastic-halo*.wav
+05-supermarket-saints*.wav
+06-cassette-angel*.wav
+07-motorik-lavender*.wav
+08-the-glitter-is-a-lie*.wav
+09-teeth-in-the-swimming-pool*.wav
+10-slow-motion-crush*.wav
+11-television-daughter*.wav
+12-neon-cathedral*.wav
+13-two-suns-no-shadow*.wav

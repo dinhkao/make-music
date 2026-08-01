@@ -285,3 +285,72 @@ Bên trong file (1109 dòng):
 6. **Arrangement** — 312 beat đầy đủ + mix (ducking, carve, Fridmann squash)
 
 Không cần file ngoài, không cần drums_new.npy — mọi thứ trong 1 file.
+
+---
+
+# 🎧 ALBUM INDIE-ELECTRONIC (bài 04 → 13)
+
+10 bài mới, mỗi bài **1 file `.py` tự chứa** (chỉ cần numpy + scipy), render ra
+**bản có giọng** + **bản instrumental**. Chạy:
+
+```bash
+python3 04-plastic-halo.py              # -> .wav (cả hai bản)
+python3 04-plastic-halo.py --vocals     # chỉ bản hát
+python3 04-plastic-halo.py --no-vocals  # chỉ instrumental
+ffmpeg -i 04-plastic-halo.wav -codec:a libmp3lame -b:a 192k 04-plastic-halo.mp3
+```
+
+## Nghiên cứu trước khi viết (nguồn thật)
+
+| Bài gốc | Dữ liệu lấy được | Áp dụng vào bài nào |
+|---|---|---|
+| Ladytron – *Destroy Everything You Touch* | E minor, 120bpm, Em–D–C–B (i–VII–VI–V) | 04 |
+| Ladytron – *Seventeen* | C minor, 121bpm, giọng deadpan một cao độ | 04 |
+| MGMT – *Time to Pretend* | D major → F#m, D–G–A–F#m, trống tom + shaker | 05 |
+| MGMT – *Electric Feel* | vòng lặp thôi miên i–v–VI–VII, mượn hợp âm song song | 05 |
+| Sky Ferreira – *Everything Is Embarrassing* | C major, 115bpm, C–Am7–F–G, beat R&B 80s mờ, bass gảy ngón, piano lẻ loi | 06 |
+| Stereolab | motorik krautrock + hợp âm lounge maj7/min9, **nhịp lẻ**, organ Farfisa | 07 |
+| Grimes – *Kill V. Maim* | B minor, ~134bpm, i–III–VI–iv, "chord-melody tension" cao | 08 |
+| Grimes – *Oblivion* | D major, 156bpm, độ phức tạp giai điệu cao, arp là xương sống | 08 |
+| Magdalena Bay – *Chaeri* | Ab major, 120bpm, cao ở **Chord Complexity / Progression Novelty / Chord-Bass Melody** | 09 |
+| Tame Impala – *The Less I Know The Better* | bassline **là** hook; hợp âm trưởng mượn từ điệu thức song song | 10 |
+| Broadcast / hauntology | mellotron, piano tack, trống nhỏ, tiếng đĩa than | 11 |
+| Alvvays – *Archie, Marry Me* | I–V–ii–IV, guitar jangle 12 dây, ~110–120bpm | 12 |
+
+Nguồn: Hooktheory TheoryTab (Grimes, MGMT, Ladytron, Sky Ferreira, Magdalena Bay,
+Alvvays, Tame Impala), Wikipedia, và các bài phân tích production.
+
+## 10 bài
+
+| # | Tên | Giọng / Nhịp / BPM | Chiêu nhạc lý chính | "Khúc gãy" giữa bài |
+|---|---|---|---|---|
+| 04 | **plastic-halo** | E minor, 4/4, 122 | Vòng Andalusia i–VII–VI–V; **giai điệu đứng im ở nốt B4** trong khi hợp âm trượt xuống ⇒ cùng một nốt lần lượt là 5–6–M7–1 | BRK: mượn **A trưởng** (E dorian), bỏ kick |
+| 05 | **supermarket-saints** | D major, 4/4, 108 | Chorus vi–I–V–**II trưởng** (E); hợp âm **đẩy sớm nửa phách** trước vạch nhịp | BRIDGE G–F–C–G (bVII mixolydian), chỉ tom + shaker |
+| 06 | **cassette-angel** | C major → **Eb**, 4/4, 115 | Hòa âm chậm 2 ô/hợp âm, snare gate ở phách 3; chorus bắt đầu trên **bậc 9** | Chorus cuối **chuyển giọng lên Eb** (quãng 3 thứ) |
+| 07 | **motorik-lavender** | A major, **4/4 + 7/8**, 132 | Imaj7–III7–vi9–ii7 kiểu lounge; **mỗi 8 ô có 1 ô 7/8**; tiến triển bằng **chồng lớp**, trống không đổi | BRIDGE maj7 trượt nửa cung (planing) |
+| 08 | **the-glitter-is-a-lie** | F# minor, 4/4, 134 | i–III–VI–iv, giai điệu đâm vào bậc 9/11; chorus là **chant đội cổ vũ** | **DROP**: tắt hết, còn kick + chant + tiếng rít |
+| 09 | **teeth-in-the-swimming-pool** | Ab major, 4/4, 120 | **Chord-bass melody**: giữ nguyên chùm Ab, bass đi xuống Ab–G–F–Eb; chorus có **Cb(B)maj7** (bIII trưởng mượn) | **WARP**: tape stop → nửa nhịp → bật lại |
+| 10 | **slow-motion-crush** | B minor, 4/4, 116 | **Bassline là hook**; chorus mượn **E trưởng** (IV từ B dorian), bass đi vòng quãng 5 | **FLIP**: trống nửa nhịp, bass giữ nguyên câu |
+| 11 | **television-daughter** | F minor, 4/4, 96 | i–VI–III–VII6 chậm; pre chèn **viio (Edim7)**; chorus to bằng **mật độ** chứ không bằng âm lượng | **HOLLOW**: 8 ô **không có trống** |
+| 12 | **neon-cathedral** | E major, 4/4, 128 | I–V–ii–IV kiểu jangle; chorus có **C trưởng = bVI mượn**; hook là **một nốt B5 giữ dài** đổi màu theo hợp âm | **CHIME**: không trống, chỉ guitar 12 dây vang |
+| 13 | **two-suns-no-shadow** | C#m → E, **5/4 → 4/4 → 6/4**, 100 | Verse 5/4 (3+2) ở C# thứ, chorus 4/4 bùng sang **Mi trưởng**; bridge 6/4 | Kết **treo trên B (V)**, không giải quyết |
+
+## Nguyên tắc chống "AI slop" áp dụng cho cả 10 bài
+
+- **Không loop vô tận**: mỗi bài có ít nhất một đoạn *phá cấu trúc* (cột "khúc gãy"),
+  và gain/độ dày nhạc cụ tăng dần theo từng đoạn (intro → chorus cuối).
+- **Giai điệu viết theo lời thật** (từng âm tiết có nguyên âm + phụ âm riêng), câu hát
+  có chỗ nghỉ, có nốt giữ dài cuối câu, verse 2 **khác** verse 1.
+- **Nhân hoá**: `line(... jit=, drag=)` làm mỗi âm tiết lệch vài ms và hát trễ/sớm;
+  `Performer` thêm systematic offset + Gauss jitter + accent pattern cho từng cú trống.
+- **Trống bám hòa âm**: đoạn hòa âm chuyển chậm → trống nửa nhịp/thưa; đoạn hòa âm
+  chạy nhanh → trống dày; chorus đổi *loại* trống (ride/tambourine/clap) chứ không chỉ to hơn.
+- **Bass là một bè riêng**, không phải nốt gốc máy móc: có đảo phách, nhảy quãng 8,
+  đi bộ, slide, nốt chặn (dead note).
+
+## Nhạc cụ mới thêm vào thư viện (dùng chung được cho mọi bài)
+
+`synpluck` (pluck analog, bộ lọc động) · `analead` (lead 2 osc detune + glide + vibrato trễ) ·
+`gatedpad` (pad bị gate 8th/16th kiểu Ladytron) · `bell` (chuông FM) · `crackle` (đĩa than + hiss) ·
+`bitcrush` · `tapestop` · `reverse_seg` · `riser` (quét bộ lọc cộng hưởng) · `subdrop` (808 rơi) ·
+`strum` (rải dây lệch ms) — tất cả nằm sẵn trong mỗi file bài hát.
