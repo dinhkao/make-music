@@ -1,6 +1,8 @@
 """04-hurt-is-honey - mot file duy nhat, chi can numpy + scipy.
    Cam hung: "Vampire in the Corner" - Magdalena Bay (Imaginal Disk, 2024):
    - key E major, 115 BPM, 4/4; slow-build crescendo ca bai
+   - hoa am chromatic + mode-mix: I-vi-bVI-V7, IV-#IVdim-Vmaj7-V7,
+     chorus IV-bIII-bVI-V7, bridge bVI-bV-IV-V7/V (khong phai pop tủ)
    - verse airy/hushed (whisper), chorus sing-songy co piano
    - filtered chords mo dan -> panned high-resonance leads
    - nua sau full band, rip not cao; vocal het -> instrumental loop -> cat ngot
@@ -1192,18 +1194,19 @@ def shriek(b_,t0,m,dur,g=0.14,seed=0):
     e=np.minimum(1,t*45)*np.exp(-t*1.4)
     put(b_,t0,_fade(_bp(x,300,9000,2)*e),g)
 
-# ============ HOA AM (E major - Vampire in the Corner DNA) ============
+# ============ HOA AM (E major - Imaginal Disk DNA: chromatic + mode-mix) ============
 CH={'Emaj7':(40,[52,56,59,63]), 'C#m7':(49,[61,64,68,71]),
-   'A':(45,[57,61,64]),        'B':(47,[59,62,66]),
-   'Amaj7':(45,[57,61,64,68]), 'F#m7':(42,[54,57,61,64]),
-   'B7':(47,[59,62,66,69]),    'G#m7':(44,[56,59,63,66]),
-   'E':(40,[52,56,59])}
-VCH=['Emaj7','C#m7','Amaj7','B']*3        # verse: I - vi - IV - V (maj7 dreamy)
-PCH=['F#m7','B7','E','A']*2               # pre: ii - V - I - IV (lift)
-CCH=['C#m7','A','E','B']*3                # chorus: vi - IV - I - V (sing-song)
-PCH2=['A','E','B','B7']                   # post: turn-around
-BCH=['Amaj7','G#m7','F#m7','B7']*2        # bridge: IV - iii - ii - V (theater)
-OCH=['C#m7','A','E','B']*2                # outro: chorus loop -> cat ngot
+   'Cmaj7':(48,[60,64,67,71]), 'B7':(47,[59,62,66,69]),
+   'Amaj7':(45,[57,61,64,68]), 'A#dim7':(46,[58,61,64,67]),
+   'Bmaj7':(47,[59,63,66,70]), 'Gmaj7':(43,[55,59,62,66]),
+   'F#m7':(42,[54,57,61,64]), 'F#7':(42,[54,58,61,64]),
+   'Bbmaj7':(46,[58,62,65,69])}
+VCH=['Emaj7','C#m7','Cmaj7','B7']*3        # verse: I - vi - bVI - V7 (root roi nua cung)
+PCH=['Amaj7','A#dim7','Bmaj7','B7']*2      # pre: IV - #IVdim - Vmaj7 - V7 (dim passing)
+CCH=['Amaj7','Gmaj7','Cmaj7','B7']*3       # chorus: IV - bIII - bVI - V7 (mode-mix chain)
+PCH2=['Amaj7','Emaj7','F#7','B7']          # post: IV - I - V7/V - V7
+BCH=['Cmaj7','Bbmaj7','Amaj7','F#7']*2     # bridge: bVI - bV - IV - V7/V (chromatic descent)
+OCH=['Amaj7','Gmaj7','Cmaj7','B7']         # outro: chorus loop -> Emaj7 resolve -> cat
 def bar_at(sec,i): return S[sec]+i*BAR
 
 # ================= TRONG: sparse -> full band (slow build) =================
@@ -1396,7 +1399,7 @@ for i in range(12):                        # CH3: cao trao cuoi - moi thu
     for off,m in [(0,'B5'),(1,'A5'),(2,'G#5'),(3,'B5'),(4,'C#6'),(5,'D6'),(6,'C#6'),(7,'B5')]:
         analead(brs,T(b+off),nn(m),0.9,0.060,det=10,cut=5600,vibd=0.010,seed=i*7+off)
     if i==0: subdrop(fx,T(b),36,2.0,0.22,18)
-for i in range(8):                         # OUT: instrumental loop (het giong)
+for i in range(7):                         # OUT: instrumental loop (het giong)
     b=bar_at('OUT',i); ch=OCH[i%4]; root,ts=CH[ch]
     for off,iv,vv in [(0,0,1.0),(0.5,0,0.85),(1,12,0.7),(1.5,0,0.65),
                       (2,0,0.95),(2.5,0,0.65),(3,12,0.8),(3.5,0,0.65)]:
@@ -1461,8 +1464,8 @@ CHP=[H1,H2,H3,H4]
 POSTW=[(0,2,'E4','e','h'),(2,2,'B4','u',''),(4,1,'C#5','i','s'),(5,1,'B4','o','n'),(6,2,'A4','i',''),
        (8,2,'E4','e','h'),(10,2,'B4','u',''),(12,1,'C#5','o','n'),(13,1,'B4','i',''),(14,2,'A4','i','')]
 # BRIDGE: theater croon
-BR1=[(0,1,'D#4','a','b'),(1,0.5,'E4','e','th'),(1.5,0.5,'E4','e','n'),(2,1,'F#4','o',''),
-     (3,1,'E4','o','f'),(4,1,'D#4','e','th'),(5,1,'F#4','i','v'),(6.5,1.5,'G#4','i','n')]
+BR1=[(0,1,'E4','a','b'),(1,0.5,'E4','e','th'),(1.5,0.5,'E4','e','n'),(2,1,'F#4','o',''),
+     (3,1,'E4','o','f'),(4,1,'E4','e','th'),(5,1,'F#4','i','v'),(6.5,1.5,'G#4','i','n')]
 BR2=[(0,1,'D#4','e','d'),(1,1,'F#4','a','r'),(2,1,'E4','e',''),(3,1,'G#4','u','m'),(4,1,'F#4','o',''),
      (5,1,'D#4','i','l'),(6.5,1.5,'F#4','a','t')]
 BR3=[(0,1,'E4','e','th'),(1,1,'G#4','a','z'),(2,1,'F#4','u','w'),(3,1,'E4','o','n'),(4,1,'G#4','i','d'),
